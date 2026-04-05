@@ -49,6 +49,7 @@ function App() {
   const [selectedStock, setSelectedStock] = useState(null);
   const [detailData, setDetailData] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [selectedTimeframe, setSelectedTimeframe] = useState("1d");
 
   useEffect(() => {
     async function boot() {
@@ -131,9 +132,23 @@ function App() {
 
   async function openStockDetail(stock) {
     setSelectedStock(stock);
+    setSelectedTimeframe("1d");
     setDetailLoading(true);
     try {
       const dashboard = await fetchJson(API.dashboard(stock.symbol, "1d"));
+      setDetailData(dashboard);
+    } catch (err) {
+      console.error("Failed to load chart data:", err);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  async function loadChartData(timeframe) {
+    setSelectedTimeframe(timeframe);
+    setDetailLoading(true);
+    try {
+      const dashboard = await fetchJson(API.dashboard(selectedStock.symbol, timeframe));
       setDetailData(dashboard);
     } catch (err) {
       console.error("Failed to load chart data:", err);
@@ -280,13 +295,27 @@ function App() {
               <button className="close-btn" onClick={closeDetail}>✕</button>
             </div>
 
-            {/* Search Box */}
-            <div className="modal-search">
+            {/* Search & Analyse */}
+            <div className="modal-search-bar">
               <input
                 type="text"
                 placeholder="Search related stocks..."
                 className="modal-search-input"
               />
+              <button className="analyse-btn">🔍 Analyse</button>
+            </div>
+
+            {/* Timeframe Buttons */}
+            <div className="timeframe-selector">
+              {["5m", "10m", "15m", "30m", "1d"].map((tf) => (
+                <button
+                  key={tf}
+                  className={`timeframe-btn ${selectedTimeframe === tf ? "active" : ""}`}
+                  onClick={() => loadChartData(tf)}
+                >
+                  {tf}
+                </button>
+              ))}
             </div>
 
             {/* Chart Area */}
@@ -303,20 +332,40 @@ function App() {
             {/* Explanation Boxes */}
             <div className="explanation-boxes">
               <div className="explanation-box">
-                <h4>📊 Analysis</h4>
-                <p>{detailData?.analysis || "Technical analysis indicator: Stock showing strong uptrend with high volume. RSI indicates overbought conditions. Support level at 500."}</p>
+                <h4>📊 Technical Analysis</h4>
+                <p>
+                  {detailData?.analysis || "RSI (14): 72 - Overbought territory. MACD: Bullish divergence. Bollinger Bands: Price near upper band indicating strong uptrend. Volume: Above average confirming strength."}
+                </p>
               </div>
               <div className="explanation-box">
-                <h4>💡 Signal</h4>
-                <p>Signal: <strong>{selectedStock.signal}</strong> | Confidence: {selectedStock.confidence}%</p>
+                <h4>💡 Trading Signal</h4>
+                <p>
+                  Signal: <strong>{selectedStock.signal}</strong> | Confidence: {selectedStock.confidence}% | Timeframe: <strong>{selectedTimeframe}</strong>
+                </p>
               </div>
               <div className="explanation-box">
-                <h4>📈 Trend</h4>
-                <p>{detailData?.trend || "Current trend is bullish with positive momentum. Moving averages are aligned in uptrend formation. Consider entry on dips."}</p>
+                <h4>📈 Chart Pattern</h4>
+                <p>
+                  {detailData?.pattern || "Bullish Flag Pattern forming. Resistance at 550, Support at 480. Breakout likely above 545. Golden Cross: 50-MA above 200-MA confirming uptrend."}
+                </p>
               </div>
               <div className="explanation-box">
-                <h4>⚠️ Risk</h4>
-                <p>{detailData?.risk || "Risk Level: Medium. Key support at 480. Stop loss recommended at 450. Take profit at 600."}</p>
+                <h4>🎯 Support & Resistance</h4>
+                <p>
+                  {detailData?.levels || "Strong Resistance: 550 ⚡ | Previous High: 530 | Current Price: 515 ↘ | Support: 480 | Previous Low: 450"}
+                </p>
+              </div>
+              <div className="explanation-box">
+                <h4>⚠️ Risk Management</h4>
+                <p>
+                  {detailData?.risk || "Entry: 515-520 | Stop Loss: 450 (-5-7%) | Take Profit 1: 550 (+7%) | Take Profit 2: 600 (+15%) | Risk:Reward = 1:2.5"}
+                </p>
+              </div>
+              <div className="explanation-box">
+                <h4>🔔 Key Indicators</h4>
+                <p>
+                  {detailData?.indicators || "Stochastic: 85 (Overbought) | CCI: +120 (Strong Buy) | Volume Profile: High at 510-520 level | ATR: 8.5 (High volatility)"}
+                </p>
               </div>
             </div>
           </div>
