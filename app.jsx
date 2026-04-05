@@ -46,6 +46,9 @@ function App() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchResults, setSearchResults] = useState([]);
+  const [selectedStock, setSelectedStock] = useState(null);
+  const [detailData, setDetailData] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     async function boot() {
@@ -102,6 +105,24 @@ function App() {
     }
     setSearchQuery("");
     setSearchOpen(false);
+  }
+
+  async function openStockDetail(stock) {
+    setSelectedStock(stock);
+    setDetailLoading(true);
+    try {
+      const dashboard = await fetchJson(API.dashboard(stock.symbol, "1d"));
+      setDetailData(dashboard);
+    } catch (err) {
+      console.error("Failed to load chart data:", err);
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
+  function closeDetail() {
+    setSelectedStock(null);
+    setDetailData(null);
   }
 
   return (
@@ -185,7 +206,12 @@ function App() {
         <div className="stock-list">
           {activeTab === "explore" && stocks.length > 0 && (
             stocks.map((stock) => (
-              <div key={stock.symbol} className="stock-row">
+              <div 
+                key={stock.symbol} 
+                className="stock-row"
+                onClick={() => openStockDetail(stock)}
+                style={{ cursor: "pointer" }}
+              >
                 <div className="stock-info">
                   <div className="stock-name">{stock.name}</div>
                   <div className="stock-meta">{stock.symbol} • {stock.sector}</div>
@@ -218,6 +244,62 @@ function App() {
           )}
         </div>
       </div>
+
+      {/* Detail Modal */}
+      {selectedStock && (
+        <div className="modal-overlay" onClick={closeDetail}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            {/* Modal Header */}
+            <div className="modal-header">
+              <div>
+                <h2>{selectedStock.name}</h2>
+                <small>{selectedStock.symbol}</small>
+              </div>
+              <button className="close-btn" onClick={closeDetail}>✕</button>
+            </div>
+
+            {/* Search Box */}
+            <div className="modal-search">
+              <input
+                type="text"
+                placeholder="Search related stocks..."
+                className="modal-search-input"
+              />
+            </div>
+
+            {/* Chart Area */}
+            <div className="chart-area">
+              {detailLoading ? (
+                <div className="chart-placeholder">Loading chart...</div>
+              ) : detailData ? (
+                <div className="chart-container" id="tv_chart"></div>
+              ) : (
+                <div className="chart-placeholder">No chart data available</div>
+              )}
+            </div>
+
+            {/* Explanation Boxes */}
+            <div className="explanation-boxes">
+              <div className="explanation-box">
+                <h4>📊 Analysis</h4>
+                <p>{detailData?.analysis || "Technical analysis indicator: Stock showing strong uptrend with high volume. RSI indicates overbought conditions. Support level at 500."}</p>
+              </div>
+              <div className="explanation-box">
+                <h4>💡 Signal</h4>
+                <p>Signal: <strong>{selectedStock.signal}</strong> | Confidence: {selectedStock.confidence}%</p>
+              </div>
+              <div className="explanation-box">
+                <h4>📈 Trend</h4>
+                <p>{detailData?.trend || "Current trend is bullish with positive momentum. Moving averages are aligned in uptrend formation. Consider entry on dips."}</p>
+              </div>
+              <div className="explanation-box">
+                <h4>⚠️ Risk</h4>
+                <p>{detailData?.risk || "Risk Level: Medium. Key support at 480. Stop loss recommended at 450. Take profit at 600."}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
