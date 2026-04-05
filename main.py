@@ -64,12 +64,13 @@ class WatchlistPayload(BaseModel):
 
 class RegisterPayload(BaseModel):
     fullName: str
-    phone: str
+    phone: str = ""
+    email: str = ""
     password: str
 
 
 class LoginPayload(BaseModel):
-    phone: str
+    identifier: str
     password: str
 
 
@@ -126,13 +127,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             full_name TEXT NOT NULL,
-            phone TEXT NOT NULL UNIQUE,
+            phone TEXT UNIQUE,
+            email TEXT UNIQUE,
             password_salt TEXT NOT NULL,
             password_hash TEXT NOT NULL,
             created_at TEXT NOT NULL
         )
         """
     )
+    cursor.execute("PRAGMA table_info(users)")
+    columns = [row[1] for row in cursor.fetchall()]
+    if "email" not in columns:
+        cursor.execute("ALTER TABLE users ADD COLUMN email TEXT")
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS sessions (
@@ -172,9 +178,16 @@ def get_ist_timestamp() -> str:
 
 def normalize_phone(phone: str) -> str:
     digits = "".join(character for character in phone if character.isdigit())
-    if len(digits) < 10:
+    if phone and len(digits) < 10:
         raise HTTPException(status_code=400, detail="Enter a valid phone number.")
     return digits
+
+
+def normalize_email(email: str) -> str:
+    normalized = email.strip().lower()
+    if normalized and ("@" not in normalized or "." not in normalized.split("@")[-1]):
+        raise HTTPException(status_code=400, detail="Enter a valid email address.")
+    return normalized
 
 
 def hash_password(password: str, salt_hex: str) -> str:
@@ -198,6 +211,26 @@ def fetch_user_by_phone(phone: str):
         return cursor.fetchone()
     finally:
         connection.close()
+
+
+def fetch_user_by_email(email: str):
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+        return cursor.fetchone()
+    finally:
+        connection.close()
+
+
+def fetch_user_by_identifier(identifier: str):
+    normalized_email = normalize_email(identifier)
+    if normalized_email:
+        return fetch_user_by_email(normalized_email)
+    normalized_phone = normalize_phone(identifier)
+    if normalized_phone:
+        return fetch_user_by_phone(normalized_phone)
+    return None
 
 
 def create_session(user_id: int) -> str:
@@ -987,10 +1020,15 @@ def api_meta():
 def api_register(payload: RegisterPayload):
     full_name = payload.fullName.strip()
     phone = normalize_phone(payload.phone)
+    email = normalize_email(payload.email)
     if not full_name:
         raise HTTPException(status_code=400, detail="Full name is required.")
-    if fetch_user_by_phone(phone):
+    if not phone and not email:
+        raise HTTPException(status_code=400, detail="Register using either phone number or email.")
+    if phone and fetch_user_by_phone(phone):
         raise HTTPException(status_code=409, detail="Phone number is already registered.")
+    if email and fetch_user_by_email(email):
+        raise HTTPException(status_code=409, detail="Email is already registered.")
 
     salt_hex, password_hash = create_password_hash(payload.password)
     connection = db_connection()
@@ -998,10 +1036,10 @@ def api_register(payload: RegisterPayload):
         cursor = connection.cursor()
         cursor.execute(
             """
-            INSERT INTO users (full_name, phone, password_salt, password_hash, created_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO users (full_name, phone, email, password_salt, password_hash, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (full_name, phone, salt_hex, password_hash, get_ist_timestamp()),
+            (full_name, phone or None, email or None, salt_hex, password_hash, get_ist_timestamp()),
         )
         connection.commit()
         user_id = cursor.lastrowid
@@ -1011,31 +1049,42 @@ def api_register(payload: RegisterPayload):
     token = create_session(user_id)
     return {
         "token": token,
-        "user": {"id": user_id, "fullName": full_name, "phone": phone},
+        "user": {"id": user_id, "fullName": full_name, "phone": phone or "", "email": email or ""},
     }
 
 
 @app.post("/api/auth/login")
 def api_login(payload: LoginPayload):
-    phone = normalize_phone(payload.phone)
-    user = fetch_user_by_phone(phone)
+    user = fetch_user_by_identifier(payload.identifier)
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid phone number or password.")
+        raise HTTPException(status_code=401, detail="Invalid login or password.")
 
     if hash_password(payload.password, user["password_salt"]) != user["password_hash"]:
-        raise HTTPException(status_code=401, detail="Invalid phone number or password.")
+        raise HTTPException(status_code=401, detail="Invalid login or password.")
 
     token = create_session(int(user["id"]))
     return {
         "token": token,
-        "user": {"id": int(user["id"]), "fullName": user["full_name"], "phone": user["phone"]},
+        "user": {
+            "id": int(user["id"]),
+            "fullName": user["full_name"],
+            "phone": user["phone"] or "",
+            "email": user["email"] or "",
+        },
     }
 
 
 @app.get("/api/auth/me")
 def api_me(authorization: Optional[str] = Header(default=None)):
     user, _ = require_authenticated_user(authorization)
-    return {"user": {"id": int(user["id"]), "fullName": user["full_name"], "phone": user["phone"]}}
+    return {
+        "user": {
+            "id": int(user["id"]),
+            "fullName": user["full_name"],
+            "phone": user["phone"] or "",
+            "email": user["email"] or "",
+        }
+    }
 
 
 @app.post("/api/auth/logout")

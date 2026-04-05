@@ -100,6 +100,26 @@ h1 {
   overflow: visible;
 }
 
+.preview-banner,
+.lock-banner {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+
+.preview-banner {
+  margin-top: 18px;
+}
+
+.preview-banner strong,
+.lock-banner strong {
+  color: var(--text);
+}
+
 .search-stack {
   position: relative;
   isolation: isolate;
@@ -236,6 +256,7 @@ button:hover {
   display: grid;
   grid-template-columns: 1.45fr 0.8fr;
   gap: 22px;
+  align-items: start;
 }
 
 .panel {
@@ -245,6 +266,13 @@ button:hover {
 .main-panel {
   display: grid;
   gap: 18px;
+}
+
+.side-panel {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100vh - 40px);
+  overflow: auto;
 }
 
 .compare-panel {
@@ -404,6 +432,12 @@ button:hover {
   gap: 12px;
 }
 
+.watchlist-stack {
+  max-height: 280px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
 .watch-item {
   padding: 12px;
   display: grid;
@@ -423,6 +457,12 @@ button:hover {
 
 .news-block {
   margin-top: 24px;
+}
+
+.news-list {
+  max-height: 300px;
+  overflow: auto;
+  padding-right: 4px;
 }
 
 .news-item {

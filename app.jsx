@@ -141,7 +141,8 @@ function App() {
   const [resolvedSearch, setResolvedSearch] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [authMode, setAuthMode] = useState("login");
-  const [authForm, setAuthForm] = useState({ fullName: "", phone: "", password: "" });
+  const [authMethod, setAuthMethod] = useState("phone");
+  const [authForm, setAuthForm] = useState({ fullName: "", phone: "", email: "", password: "" });
   const [authToken, setAuthToken] = useState(localStorage.getItem("authToken") || "");
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
@@ -309,7 +310,10 @@ function App() {
       const url = mode === "register" ? API.register : API.login;
       const payload = mode === "register"
         ? authForm
-        : { phone: authForm.phone, password: authForm.password };
+        : {
+            identifier: authMethod === "phone" ? authForm.phone : authForm.email,
+            password: authForm.password,
+          };
       const result = await fetchJson(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -318,7 +322,7 @@ function App() {
       localStorage.setItem("authToken", result.token);
       setAuthToken(result.token);
       setCurrentUser(result.user);
-      setAuthForm({ fullName: "", phone: "", password: "" });
+      setAuthForm({ fullName: "", phone: "", email: "", password: "" });
       await loadWatchlist(selectedTimeframe);
     } catch (err) {
       setError(err.message);
@@ -351,6 +355,10 @@ function App() {
             Analyze Indian stocks with candlestick charts, RSI, MACD, Bollinger Bands, AI signals,
             dynamic explanations, saved watchlists, and side-by-side comparison.
           </p>
+          <div className="preview-banner">
+            <strong>Preview first.</strong>
+            <span>You can explore the dashboard without logging in. Create an account only when you want saved watchlists and deeper personalized usage.</span>
+          </div>
 
           <div className="hero-controls">
             <div className="search-stack">
@@ -405,27 +413,31 @@ function App() {
         </div>
 
         <div className="hero-card">
-          <p className="card-label">Stack</p>
+          <p className="card-label">Access</p>
           <ul>
-            <li>FastAPI backend with async market-data endpoints</li>
-            <li>React frontend with live candlestick chart</li>
-            <li>RSI, MACD, and Bollinger Bands</li>
-            <li>AI-style signal scoring with confidence and dynamic explanation</li>
+            <li>Guest users can view live dashboard analysis</li>
+            <li>Registered users can save watchlists and personal usage data</li>
+            <li>Login works with phone number or email plus password</li>
+            <li>Google sign-in can be added later with OAuth credentials</li>
           </ul>
 
           <div className="auth-panel">
-            <p className="card-label">User Login</p>
+            <p className="card-label">Register Or Login</p>
             {currentUser ? (
               <div className="auth-logged">
                 <strong>{currentUser.fullName}</strong>
-                <small>{currentUser.phone}</small>
+                <small>{currentUser.email || currentUser.phone}</small>
                 <button className="ghost-btn" onClick={logout}>Logout</button>
               </div>
             ) : (
               <div className="auth-form">
                 <div className="auth-tabs">
                   <button className={authMode === "login" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("login")}>Login</button>
-                  <button className={authMode === "register" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("register")}>Register</button>
+                    <button className={authMode === "register" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("register")}>Register</button>
+                </div>
+                <div className="auth-tabs">
+                  <button className={authMethod === "phone" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMethod("phone")}>Use Phone</button>
+                  <button className={authMethod === "email" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMethod("email")}>Use Email</button>
                 </div>
                 {authMode === "register" && (
                   <input
@@ -434,11 +446,19 @@ function App() {
                     placeholder="Full name"
                   />
                 )}
-                <input
-                  value={authForm.phone}
-                  onChange={(event) => setAuthForm({ ...authForm, phone: event.target.value })}
-                  placeholder="Phone number"
-                />
+                {authMethod === "phone" ? (
+                  <input
+                    value={authForm.phone}
+                    onChange={(event) => setAuthForm({ ...authForm, phone: event.target.value })}
+                    placeholder="Phone number"
+                  />
+                ) : (
+                  <input
+                    value={authForm.email}
+                    onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
+                    placeholder="Email address"
+                  />
+                )}
                 <input
                   type="password"
                   value={authForm.password}
@@ -532,6 +552,13 @@ function App() {
               <h2>Saved Signals</h2>
             </div>
           </div>
+
+          {!currentUser && (
+            <div className="lock-banner">
+              <strong>Login required for saved data</strong>
+              <span>Guests can explore analysis, but watchlist saving is enabled after login or registration.</span>
+            </div>
+          )}
 
           <div className="inline-form">
             <input
