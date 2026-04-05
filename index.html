@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NSE AI Market Direction</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">AI Stock Analysis for India</p>
+        <h1>Track NSE stocks with a smart market direction dashboard.</h1>
+        <p class="hero-text">
+          Analyze Indian stocks using moving averages, RSI, momentum, and volatility.
+          Use it as a research assistant for trend direction, not as guaranteed financial advice.
+        </p>
+
+        <div class="search-panel">
+          <label for="symbol" class="input-label">Enter NSE symbol</label>
+          <div class="search-row">
+            <input type="text" id="symbol" placeholder="RELIANCE, TCS, INFY, SBIN" />
+            <button id="analyzeBtn">Analyze Stock</button>
+          </div>
+          <div class="chip-row">
+            <button class="chip" data-symbol="RELIANCE">RELIANCE</button>
+            <button class="chip" data-symbol="TCS">TCS</button>
+            <button class="chip" data-symbol="INFY">INFY</button>
+            <button class="chip" data-symbol="HDFCBANK">HDFCBANK</button>
+            <button class="chip" data-symbol="ICICIBANK">ICICIBANK</button>
+            <button class="chip" data-symbol="SBIN">SBIN</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-card">
+        <p class="card-label">What the AI checks</p>
+        <ul>
+          <li>Trend structure using 20-day and 50-day averages</li>
+          <li>RSI for overheated and oversold zones</li>
+          <li>5-day momentum and short-term volatility</li>
+          <li>Actionable entry, target, and stop-loss ranges</li>
+        </ul>
+      </div>
+    </header>
+
+    <main class="dashboard">
+      <section class="panel primary-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Single Stock Report</p>
+            <h2 id="reportTitle">Waiting for analysis</h2>
+          </div>
+          <span class="signal-badge neutral" id="signalBadge">NO SIGNAL</span>
+        </div>
+
+        <p class="summary" id="summaryText">
+          Search any Indian stock listed on NSE to generate its AI-backed market direction report.
+        </p>
+
+        <div class="metrics-grid">
+          <article class="metric-card">
+            <span>Current Price</span>
+            <strong id="currentPrice">--</strong>
+          </article>
+          <article class="metric-card">
+            <span>Trend</span>
+            <strong id="trendValue">--</strong>
+          </article>
+          <article class="metric-card">
+            <span>Confidence</span>
+            <strong id="confidenceValue">--</strong>
+          </article>
+          <article class="metric-card">
+            <span>RSI (14)</span>
+            <strong id="rsiValue">--</strong>
+          </article>
+          <article class="metric-card">
+            <span>5D Momentum</span>
+            <strong id="momentumValue">--</strong>
+          </article>
+          <article class="metric-card">
+            <span>Volatility</span>
+            <strong id="volatilityValue">--</strong>
+          </article>
+        </div>
+
+        <div class="levels-grid">
+          <div class="level-box">
+            <span>Entry Zone</span>
+            <strong id="entryValue">--</strong>
+          </div>
+          <div class="level-box">
+            <span>Target</span>
+            <strong id="targetValue">--</strong>
+          </div>
+          <div class="level-box">
+            <span>Stop Loss</span>
+            <strong id="stopValue">--</strong>
+          </div>
+        </div>
+
+        <div class="chart-panel">
+          <div class="chart-head">
+            <h3>Price Trend</h3>
+            <p id="chartMeta">Last 60 trading sessions</p>
+          </div>
+          <div id="chartContainer" class="chart-container">
+            <div class="chart-empty">Run a stock search to load the chart.</div>
+          </div>
+        </div>
+
+        <div class="reason-panel">
+          <h3>Why the model thinks this way</h3>
+          <ul id="reasonsList">
+            <li>Analysis reasons will appear here after you run a stock search.</li>
+          </ul>
+        </div>
+
+        <p class="timestamp" id="timestampText">Last update: --</p>
+        <p class="disclaimer" id="disclaimerText">
+          This dashboard is for education and research. It cannot guarantee future stock movement.
+        </p>
+      </section>
+
+      <section class="panel watchlist-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Market Snapshot</p>
+            <h2>Popular Indian Stocks</h2>
+          </div>
+          <button id="refreshOverview" class="secondary-btn">Refresh Watchlist</button>
+        </div>
+        <div id="watchlistGrid" class="watchlist-grid"></div>
+      </section>
+
+      <section class="panel news-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">News Sentiment</p>
+            <h2>Headline Mood</h2>
+          </div>
+          <span class="signal-badge neutral" id="newsSentimentBadge">UNAVAILABLE</span>
+        </div>
+        <p class="summary" id="newsSummary">
+          Analyze a stock to load recent headlines and a simple sentiment view.
+        </p>
+        <div id="newsList" class="news-list">
+          <div class="news-empty">No headlines loaded yet.</div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
