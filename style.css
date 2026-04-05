@@ -404,22 +404,30 @@ button:hover {
   display: block;
 }
 
-.price-line {
-  stroke-width: 4;
+.grid-line {
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-width: 1;
+}
+
+.candle-wick {
+  stroke-width: 1.6;
   stroke-linecap: round;
-  stroke-linejoin: round;
 }
 
-.price-chart.up .price-line {
+.candle-body {
+  stroke-width: 1;
+}
+
+.candle.bull .candle-wick,
+.candle.bull .candle-body {
   stroke: #27d17f;
+  fill: rgba(39, 209, 127, 0.75);
 }
 
-.price-chart.down .price-line {
+.candle.bear .candle-wick,
+.candle.bear .candle-body {
   stroke: #ff7a7a;
-}
-
-.price-area {
-  stroke: transparent;
+  fill: rgba(255, 122, 122, 0.75);
 }
 
 .chart-footer {

@@ -255,38 +255,59 @@ function renderChart(historyData) {
     return;
   }
 
-  const closes = points.map((point) => Number(point.close));
-  const min = Math.min.apply(null, closes);
-  const max = Math.max.apply(null, closes);
+  const lows = points.map((point) => Number(point.low));
+  const highs = points.map((point) => Number(point.high));
+  const min = Math.min.apply(null, lows);
+  const max = Math.max.apply(null, highs);
   const width = 760;
   const height = 260;
-  const padding = 20;
+  const paddingX = 18;
+  const paddingY = 18;
   const range = max - min || 1;
+  const plotWidth = width - paddingX * 2;
+  const plotHeight = height - paddingY * 2;
+  const candleSlot = plotWidth / Math.max(points.length, 1);
+  const candleWidth = Math.max(4, Math.min(10, candleSlot * 0.55));
 
-  const polyline = closes
-    .map((value, index) => {
-      const x = padding + (index * (width - padding * 2)) / Math.max(closes.length - 1, 1);
-      const y = height - padding - ((value - min) / range) * (height - padding * 2);
-      return `${x},${y}`;
+  function scaleY(value) {
+    return height - paddingY - ((value - min) / range) * plotHeight;
+  }
+
+  const candleMarkup = points
+    .map((point, index) => {
+      const open = Number(point.open);
+      const high = Number(point.high);
+      const low = Number(point.low);
+      const close = Number(point.close);
+      const xCenter = paddingX + index * candleSlot + candleSlot / 2;
+      const openY = scaleY(open);
+      const closeY = scaleY(close);
+      const highY = scaleY(high);
+      const lowY = scaleY(low);
+      const bodyTop = Math.min(openY, closeY);
+      const bodyHeight = Math.max(2, Math.abs(closeY - openY));
+      const candleClass = close >= open ? "bull" : "bear";
+
+      return `
+        <g class="candle ${candleClass}">
+          <line x1="${xCenter}" y1="${highY}" x2="${xCenter}" y2="${lowY}" class="candle-wick"></line>
+          <rect x="${xCenter - candleWidth / 2}" y="${bodyTop}" width="${candleWidth}" height="${bodyHeight}" rx="1.5" class="candle-body"></rect>
+        </g>
+      `;
     })
-    .join(" ");
+    .join("");
 
-  const gradientId = "priceGradient";
-  const latestPrice = closes[closes.length - 1];
-  const firstPrice = closes[0];
-  const directionClass = latestPrice >= firstPrice ? "up" : "down";
+  const latestPrice = Number(points[points.length - 1].close);
+  const firstPrice = Number(points[0].close);
   const latestDate = points[points.length - 1].date;
 
   elements.chartContainer.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" class="price-chart ${directionClass}" preserveAspectRatio="none" aria-label="Stock price trend chart">
-      <defs>
-        <linearGradient id="${gradientId}" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stop-color="rgba(31, 191, 117, 0.40)"></stop>
-          <stop offset="100%" stop-color="rgba(31, 191, 117, 0.02)"></stop>
-        </linearGradient>
-      </defs>
-      <polyline points="${polyline} ${width - padding},${height - padding} ${padding},${height - padding}" fill="url(#${gradientId})" class="price-area"></polyline>
-      <polyline points="${polyline}" fill="none" class="price-line"></polyline>
+    <svg viewBox="0 0 ${width} ${height}" class="price-chart candlestick-chart" preserveAspectRatio="none" aria-label="Stock candlestick chart">
+      <g class="chart-grid">
+        <line x1="${paddingX}" y1="${paddingY}" x2="${paddingX}" y2="${height - paddingY}" class="grid-line"></line>
+        <line x1="${paddingX}" y1="${height - paddingY}" x2="${width - paddingX}" y2="${height - paddingY}" class="grid-line"></line>
+      </g>
+      ${candleMarkup}
     </svg>
     <div class="chart-footer">
       <span>Start: ${formatCurrency(firstPrice)}</span>
