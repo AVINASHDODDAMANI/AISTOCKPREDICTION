@@ -3,6 +3,7 @@ const { useEffect, useMemo, useRef, useState } = React;
 const API = {
   meta: "/api/meta",
   search: "/api/search",
+  resolve: (query) => `/api/resolve?q=${encodeURIComponent(query)}`,
   dashboard: (symbol, timeframe) => `/api/dashboard/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}`,
   compare: (symbols, timeframe) => `/api/compare?symbols=${encodeURIComponent(symbols.join(","))}&timeframe=${encodeURIComponent(timeframe)}`,
   watchlist: (timeframe) => `/api/watchlist?timeframe=${encodeURIComponent(timeframe)}`,
@@ -133,6 +134,7 @@ function App() {
   const [compareLoading, setCompareLoading] = useState(false);
   const [error, setError] = useState("");
   const [watchlistInput, setWatchlistInput] = useState("");
+  const [resolvedSearch, setResolvedSearch] = useState(null);
 
   useEffect(() => {
     async function boot() {
@@ -200,14 +202,25 @@ function App() {
     }
   }
 
-  async function submitDashboard(symbol) {
-    await loadDashboard(symbol, selectedTimeframe);
+  async function resolveSelection(rawQuery) {
+    const trimmed = rawQuery.trim();
+    if (!trimmed) return null;
+    const resolved = await fetchJson(API.resolve(trimmed));
+    setResolvedSearch(resolved);
+    return resolved;
+  }
+
+  async function submitDashboard(rawQuery) {
+    const resolved = await resolveSelection(rawQuery);
+    if (!resolved || !resolved.symbol) return;
+    setQuery(resolved.name || resolved.symbol);
+    await loadDashboard(resolved.symbol, selectedTimeframe);
   }
 
   async function handleTimeframeChange(next) {
     setSelectedTimeframe(next);
     await Promise.all([
-      loadDashboard((dashboard && dashboard.symbol) || query, next),
+      loadDashboard((dashboard && dashboard.symbol) || (resolvedSearch && resolvedSearch.symbol) || query, next),
       loadWatchlist(next),
       loadCompare(compareInputs, next),
     ]);
@@ -215,10 +228,12 @@ function App() {
 
   async function addToWatchlist() {
     if (!watchlistInput.trim()) return;
+    const resolved = await resolveSelection(watchlistInput);
+    if (!resolved || !resolved.symbol) return;
     await fetchJson(API.addWatchlist, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ symbol: watchlistInput }),
+      body: JSON.stringify({ symbol: resolved.symbol }),
     });
     setWatchlistInput("");
     await loadWatchlist(selectedTimeframe);
@@ -266,7 +281,7 @@ function App() {
                       key={`${item.symbol}-${item.name}`}
                       className="search-result"
                       onClick={() => {
-                        setQuery(item.symbol);
+                        setQuery(item.name || item.symbol);
                         submitDashboard(item.symbol);
                       }}
                     >
@@ -400,9 +415,9 @@ function App() {
               {watchlist.map((item) => (
                 <article key={item.symbol} className="watch-item">
                   <button className="watch-main" onClick={() => submitDashboard(item.symbol)}>
-                    <strong>{item.symbol}</strong>
+                    <strong>{item.name || item.symbol}</strong>
                     <span>{item.signal}</span>
-                    <small>{formatCurrency(item.price)} · {item.confidence}%</small>
+                    <small>{item.symbol} · {formatCurrency(item.price)} · {item.confidence}%</small>
                   </button>
                   <button className="ghost-btn" onClick={() => removeFromWatchlist(item.symbol)}>Remove</button>
                 </article>
@@ -479,7 +494,7 @@ function App() {
                 <tbody>
                   {compareResults.length > 0 ? compareResults.map((item) => (
                     <tr key={item.symbol}>
-                      <td>{item.symbol}</td>
+                      <td>{item.name || item.symbol}<br /><small>{item.symbol}</small></td>
                       <td>{formatCurrency(item.price)}</td>
                       <td className={`${signalTone(item.signal)}-text`}>{item.signal}</td>
                       <td>{item.confidence}%</td>

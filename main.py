@@ -272,6 +272,18 @@ def search_universe(query: str, sector: str = "", limit: int = 8) -> List[Dict[s
     return results
 
 
+def resolve_query_to_result(query: str) -> Dict[str, str]:
+    resolved = resolve_symbol(query)
+    if resolved.get("sector") != "Unknown":
+        return resolved
+
+    matches = search_universe(query, limit=1)
+    if matches:
+        return matches[0]
+
+    return resolved
+
+
 def cached_json(key: str, ttl_seconds: int):
     return cache.get(key, ttl_seconds)
 
@@ -745,6 +757,11 @@ def api_meta():
 @app.get("/api/search")
 def api_search(q: str = Query("", description="Ticker or company name"), sector: str = Query("", description="Sector filter")):
     return {"query": q, "sector": sector, "results": search_universe(q, sector=sector)}
+
+
+@app.get("/api/resolve")
+def api_resolve(q: str = Query(..., description="Ticker or company name")):
+    return resolve_query_to_result(q)
 
 
 @app.get("/api/dashboard/{symbol}")
