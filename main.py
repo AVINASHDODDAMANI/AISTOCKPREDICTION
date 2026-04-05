@@ -39,7 +39,7 @@ TIMEFRAME_CONFIG = {
     "5m": {"period": "5d", "interval": "5m", "label": "5 Minutes"},
     "15m": {"period": "1mo", "interval": "15m", "label": "15 Minutes"},
     "1h": {"period": "3mo", "interval": "60m", "label": "1 Hour"},
-    "1d": {"period": "6mo", "interval": "1d", "label": "1 Day"},
+    "1d": {"period": "3mo", "interval": "1d", "label": "1 Day"},
 }
 
 POSITIVE_KEYWORDS = {
@@ -314,7 +314,8 @@ def cached_json(key: str, ttl_seconds: int):
 async def download_ohlc(symbols: List[str], period: str, interval: str) -> pd.DataFrame:
     symbol_key = "|".join(symbols)
     cache_key = f"ohlc::{symbol_key}::{period}::{interval}"
-    cached = cached_json(cache_key, 120)
+    ttl = 60 if interval in {"5m", "15m", "60m"} else 180
+    cached = cached_json(cache_key, ttl)
     if cached is not None:
         return cached.copy()
 

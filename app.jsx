@@ -135,6 +135,7 @@ function App() {
   const [error, setError] = useState("");
   const [watchlistInput, setWatchlistInput] = useState("");
   const [resolvedSearch, setResolvedSearch] = useState(null);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     async function boot() {
@@ -154,16 +155,30 @@ function App() {
   }, []);
 
   useEffect(() => {
+    function handleDocumentClick(event) {
+      const stack = document.querySelector(".search-stack");
+      if (stack && !stack.contains(event.target)) {
+        setSearchOpen(false);
+      }
+    }
+
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, []);
+
+  useEffect(() => {
     if (!query.trim()) {
       setSearchResults([]);
+      setSearchOpen(false);
       return;
     }
     const handle = setTimeout(async () => {
       try {
         const payload = await fetchJson(`${API.search}?q=${encodeURIComponent(query)}`);
         setSearchResults(payload.results || []);
+        setSearchOpen(Boolean(payload.results && payload.results.length));
       } catch (_) {}
-    }, 180);
+    }, 300);
     return () => clearTimeout(handle);
   }, [query]);
 
@@ -214,6 +229,8 @@ function App() {
     const resolved = await resolveSelection(rawQuery);
     if (!resolved || !resolved.symbol) return;
     setQuery(resolved.name || resolved.symbol);
+    setSearchResults([]);
+    setSearchOpen(false);
     await loadDashboard(resolved.symbol, selectedTimeframe);
   }
 
@@ -269,13 +286,19 @@ function App() {
               <div className="search-row">
                 <input
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setSearchOpen(true);
+                  }}
+                  onFocus={() => {
+                    if (heroSuggestions.length) setSearchOpen(true);
+                  }}
                   placeholder="Search stock, index, or ticker"
                 />
                 <button onClick={() => submitDashboard(query)}>Analyze</button>
               </div>
-              {heroSuggestions.length > 0 && (
-                <div className="search-dropdown">
+              {searchOpen && heroSuggestions.length > 0 && (
+                <div className="search-dropdown" onMouseDown={(event) => event.preventDefault()}>
                   {heroSuggestions.map((item) => (
                     <button
                       key={`${item.symbol}-${item.name}`}
@@ -336,6 +359,7 @@ function App() {
           </div>
 
           {loading && <div className="loading-strip">Loading market data, indicators, and explanations...</div>}
+          {loading && <div className="spinner-row"><span className="spinner" /> <span>Fetching fresh market data...</span></div>}
 
           <div className="metrics-grid">
             <MetricCard label="Current Price" value={dashboard ? formatCurrency(dashboard.price) : "--"} />
