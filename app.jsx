@@ -54,43 +54,56 @@ function CandlestickChart({ chart }) {
   useEffect(() => {
     if (!hostRef.current || !chart || !chart.candles || !chart.candles.length) return;
 
-    hostRef.current.innerHTML = "";
-    const lc = window.LightweightCharts.createChart(hostRef.current, {
-      height: 420,
-      layout: { background: { color: "transparent" }, textColor: "#c7d6ea" },
-      grid: { vertLines: { color: "rgba(255,255,255,0.06)" }, horzLines: { color: "rgba(255,255,255,0.06)" } },
-      crosshair: { mode: 1 },
-      rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
-      timeScale: { borderColor: "rgba(255,255,255,0.08)" },
-    });
+    if (!window.LightweightCharts || !window.LightweightCharts.createChart) {
+      hostRef.current.innerHTML = '<div class="chart-placeholder">Chart library failed to load.</div>';
+      return;
+    }
 
-    const candleSeries = lc.addCandlestickSeries({
-      upColor: "#21c17a",
-      downColor: "#ff7575",
-      borderVisible: false,
-      wickUpColor: "#21c17a",
-      wickDownColor: "#ff7575",
-    });
-    candleSeries.setData(chart.candles);
+    let lc = null;
+    let observer = null;
 
-    const upper = lc.addLineSeries({ color: "#4da4ff", lineWidth: 2 });
-    const middle = lc.addLineSeries({ color: "#ffd166", lineWidth: 2 });
-    const lower = lc.addLineSeries({ color: "#ff8fab", lineWidth: 2 });
-    upper.setData(chart.indicators.bollingerUpper || []);
-    middle.setData(chart.indicators.bollingerMiddle || []);
-    lower.setData(chart.indicators.bollingerLower || []);
+    try {
+      hostRef.current.innerHTML = "";
+      lc = window.LightweightCharts.createChart(hostRef.current, {
+        height: 420,
+        layout: { backgroundColor: "transparent", textColor: "#c7d6ea" },
+        grid: { vertLines: { color: "rgba(255,255,255,0.06)" }, horzLines: { color: "rgba(255,255,255,0.06)" } },
+        crosshair: { mode: 1 },
+        rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
+        timeScale: { borderColor: "rgba(255,255,255,0.08)" },
+      });
 
-    lc.timeScale().fitContent();
-    const observer = new ResizeObserver(() => {
-      if (hostRef.current) {
-        lc.applyOptions({ width: hostRef.current.clientWidth });
-      }
-    });
-    observer.observe(hostRef.current);
+      const candleSeries = lc.addCandlestickSeries({
+        upColor: "#21c17a",
+        downColor: "#ff7575",
+        borderVisible: false,
+        wickUpColor: "#21c17a",
+        wickDownColor: "#ff7575",
+      });
+      candleSeries.setData(chart.candles);
+
+      const upper = lc.addLineSeries({ color: "#4da4ff", lineWidth: 2 });
+      const middle = lc.addLineSeries({ color: "#ffd166", lineWidth: 2 });
+      const lower = lc.addLineSeries({ color: "#ff8fab", lineWidth: 2 });
+      upper.setData(chart.indicators.bollingerUpper || []);
+      middle.setData(chart.indicators.bollingerMiddle || []);
+      lower.setData(chart.indicators.bollingerLower || []);
+
+      lc.timeScale().fitContent();
+      observer = new ResizeObserver(() => {
+        if (hostRef.current) {
+          lc.applyOptions({ width: hostRef.current.clientWidth });
+        }
+      });
+      observer.observe(hostRef.current);
+    } catch (error) {
+      console.error("Chart render failed", error);
+      hostRef.current.innerHTML = '<div class="chart-placeholder">Chart could not be rendered for this symbol.</div>';
+    }
 
     return () => {
-      observer.disconnect();
-      lc.remove();
+      if (observer) observer.disconnect();
+      if (lc) lc.remove();
     };
   }, [chart]);
 
