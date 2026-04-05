@@ -119,6 +119,10 @@ def resolve_stock_query(query: str) -> Dict[str, str]:
         if clean_query in stock["symbol"] or clean_query in name_upper:
             return stock
 
+    live_results = search_yahoo_india(clean_query, limit=1)
+    if live_results:
+        return live_results[0]
+
     return {"symbol": clean_query, "name": clean_query.title()}
 
 
@@ -170,6 +174,79 @@ def search_stock_catalog(query: str, limit: int = 8, sector: str = "") -> List[D
             break
 
     return unique_results
+
+
+def search_yahoo_india(query: str, limit: int = 8) -> List[Dict[str, str]]:
+    trimmed_query = query.strip()
+    if not trimmed_query:
+        return []
+
+    try:
+        search = yf.Search(
+            trimmed_query,
+            max_results=max(limit * 2, 10),
+            news_count=0,
+            lists_count=0,
+            enable_fuzzy_query=True,
+            raise_errors=False,
+        )
+        quotes = getattr(search, "quotes", []) or []
+    except Exception:
+        return []
+
+    results = []
+    seen_symbols = set()
+
+    for quote in quotes:
+        symbol = str(quote.get("symbol", "")).upper().replace(".NS", "")
+        short_name = quote.get("shortname") or quote.get("longname") or symbol
+        exchange = str(quote.get("exchange", "")).upper()
+        quote_type = str(quote.get("quoteType", "")).upper()
+
+        if not symbol:
+            continue
+        if symbol in seen_symbols:
+            continue
+        if ".NS" not in str(quote.get("symbol", "")).upper() and "NSE" not in exchange:
+            continue
+        if quote_type and quote_type not in {"EQUITY", "MUTUALFUND", "ETF"}:
+            continue
+
+        seen_symbols.add(symbol)
+        results.append(
+            {
+                "symbol": symbol,
+                "name": str(short_name),
+                "sector": "Live Search",
+            }
+        )
+
+        if len(results) >= limit:
+            break
+
+    return results
+
+
+def combined_stock_search(query: str, limit: int = 8, sector: str = "") -> List[Dict[str, str]]:
+    local_results = search_stock_catalog(query, limit=limit, sector=sector)
+    if sector:
+        return local_results
+
+    live_results = search_yahoo_india(query, limit=limit)
+
+    merged = []
+    seen_symbols = set()
+
+    for stock in local_results + live_results:
+        symbol = stock["symbol"]
+        if symbol in seen_symbols:
+            continue
+        seen_symbols.add(symbol)
+        merged.append(stock)
+        if len(merged) >= limit:
+            break
+
+    return merged
 
 
 def get_ist_timestamp() -> str:
@@ -562,7 +639,7 @@ def search_stocks(
     q: str = Query("", description="Stock name or ticker query"),
     sector: str = Query("", description="Optional sector filter"),
 ):
-    results = search_stock_catalog(q, sector=sector)
+    results = combined_stock_search(q, sector=sector)
     return {
         "query": q,
         "sector": sector,
