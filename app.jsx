@@ -56,13 +56,35 @@ function App() {
         setLoading(true);
         const meta = await fetchJson(API.meta);
         if (meta.watchlist && meta.watchlist.length > 0) {
-          const stockList = meta.watchlist.slice(0, 15).map((stock) => ({
-            ...stock,
-            signal: ["BUY", "SELL", "HOLD"][Math.floor(Math.random() * 3)],
-            confidence: Math.floor(Math.random() * 40 + 60),
-            change: (Math.random() - 0.5) * 10,
-          }));
-          setStocks(stockList);
+          // Fetch full stock details for each symbol
+          const stockDetails = await Promise.all(
+            meta.watchlist.slice(0, 15).map(async (symbol) => {
+              try {
+                const resolved = await fetchJson(API.resolve(symbol));
+                return {
+                  symbol: resolved.symbol,
+                  name: resolved.name || symbol,
+                  sector: resolved.sector || "Others",
+                  price: Math.random() * 5000 + 100,
+                  signal: ["BUY", "SELL", "HOLD"][Math.floor(Math.random() * 3)],
+                  confidence: Math.floor(Math.random() * 40 + 60),
+                  change: (Math.random() - 0.5) * 10,
+                };
+              } catch (e) {
+                // Fallback if resolve fails
+                return {
+                  symbol: symbol,
+                  name: symbol,
+                  sector: "Others",
+                  price: Math.random() * 5000 + 100,
+                  signal: ["BUY", "SELL", "HOLD"][Math.floor(Math.random() * 3)],
+                  confidence: Math.floor(Math.random() * 40 + 60),
+                  change: (Math.random() - 0.5) * 10,
+                };
+              }
+            })
+          );
+          setStocks(stockDetails);
         }
       } catch (err) {
         setError(err.message);
