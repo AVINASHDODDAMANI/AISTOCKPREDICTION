@@ -13,6 +13,7 @@ import yfinance as yf
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from stocks_catalog import SECTOR_OPTIONS, STOCK_CATALOG
 
 app = FastAPI(title="Indian Stock AI Analyzer")
 
@@ -26,49 +27,6 @@ DEFAULT_WATCHLIST = [
     "HDFCBANK",
     "ICICIBANK",
     "SBIN",
-]
-
-STOCK_CATALOG = [
-    {"symbol": "RELIANCE", "name": "Reliance Industries"},
-    {"symbol": "TCS", "name": "Tata Consultancy Services"},
-    {"symbol": "INFY", "name": "Infosys"},
-    {"symbol": "HDFCBANK", "name": "HDFC Bank"},
-    {"symbol": "ICICIBANK", "name": "ICICI Bank"},
-    {"symbol": "SBIN", "name": "State Bank of India"},
-    {"symbol": "BHARTIARTL", "name": "Bharti Airtel"},
-    {"symbol": "LT", "name": "Larsen and Toubro"},
-    {"symbol": "ITC", "name": "ITC"},
-    {"symbol": "KOTAKBANK", "name": "Kotak Mahindra Bank"},
-    {"symbol": "AXISBANK", "name": "Axis Bank"},
-    {"symbol": "ASIANPAINT", "name": "Asian Paints"},
-    {"symbol": "MARUTI", "name": "Maruti Suzuki"},
-    {"symbol": "SUNPHARMA", "name": "Sun Pharmaceutical"},
-    {"symbol": "TITAN", "name": "Titan Company"},
-    {"symbol": "ULTRACEMCO", "name": "UltraTech Cement"},
-    {"symbol": "NESTLEIND", "name": "Nestle India"},
-    {"symbol": "BAJFINANCE", "name": "Bajaj Finance"},
-    {"symbol": "BAJAJFINSV", "name": "Bajaj Finserv"},
-    {"symbol": "WIPRO", "name": "Wipro"},
-    {"symbol": "POWERGRID", "name": "Power Grid Corporation"},
-    {"symbol": "NTPC", "name": "NTPC"},
-    {"symbol": "TATAMOTORS", "name": "Tata Motors"},
-    {"symbol": "TATASTEEL", "name": "Tata Steel"},
-    {"symbol": "M&M", "name": "Mahindra and Mahindra"},
-    {"symbol": "INDUSINDBK", "name": "IndusInd Bank"},
-    {"symbol": "HCLTECH", "name": "HCL Technologies"},
-    {"symbol": "ADANIENT", "name": "Adani Enterprises"},
-    {"symbol": "ADANIPORTS", "name": "Adani Ports"},
-    {"symbol": "JSWSTEEL", "name": "JSW Steel"},
-    {"symbol": "HINDUNILVR", "name": "Hindustan Unilever"},
-    {"symbol": "TECHM", "name": "Tech Mahindra"},
-    {"symbol": "DRREDDY", "name": "Dr Reddys Laboratories"},
-    {"symbol": "CIPLA", "name": "Cipla"},
-    {"symbol": "GRASIM", "name": "Grasim Industries"},
-    {"symbol": "EICHERMOT", "name": "Eicher Motors"},
-    {"symbol": "HEROMOTOCO", "name": "Hero MotoCorp"},
-    {"symbol": "ONGC", "name": "Oil and Natural Gas Corporation"},
-    {"symbol": "COALINDIA", "name": "Coal India"},
-    {"symbol": "BPCL", "name": "Bharat Petroleum"},
 ]
 
 POSITIVE_KEYWORDS = {
@@ -164,32 +122,54 @@ def resolve_stock_query(query: str) -> Dict[str, str]:
     return {"symbol": clean_query, "name": clean_query.title()}
 
 
-def search_stock_catalog(query: str, limit: int = 8) -> List[Dict[str, str]]:
+def search_stock_catalog(query: str, limit: int = 8, sector: str = "") -> List[Dict[str, str]]:
     clean_query = normalize_stock_query(query)
+    selected_sector = sector.strip().lower()
+    catalog = [
+        stock for stock in STOCK_CATALOG
+        if not selected_sector or stock["sector"].lower() == selected_sector
+    ]
+
     if not clean_query:
-        return STOCK_CATALOG[:limit]
+        return catalog[:limit]
 
     ranked_matches = []
-    for stock in STOCK_CATALOG:
+    for stock in catalog:
         symbol = stock["symbol"]
         name = stock["name"]
         name_upper = name.upper()
+        sector_name = stock["sector"].upper()
 
         score = 0
         if symbol.startswith(clean_query):
             score += 4
         if name_upper.startswith(clean_query):
             score += 5
+        if sector_name.startswith(clean_query):
+            score += 1
         if clean_query in symbol:
             score += 2
         if clean_query in name_upper:
             score += 3
+        if clean_query in sector_name:
+            score += 1
 
         if score > 0:
             ranked_matches.append((score, stock))
 
     ranked_matches.sort(key=lambda item: (-item[0], item[1]["name"]))
-    return [item[1] for item in ranked_matches[:limit]]
+    unique_results = []
+    seen_symbols = set()
+
+    for _, stock in ranked_matches:
+        if stock["symbol"] in seen_symbols:
+            continue
+        seen_symbols.add(stock["symbol"])
+        unique_results.append(stock)
+        if len(unique_results) >= limit:
+            break
+
+    return unique_results
 
 
 def get_ist_timestamp() -> str:
@@ -578,11 +558,23 @@ def news(symbol: str = Query(..., description="NSE stock symbol like RELIANCE or
 
 
 @app.get("/search-stocks")
-def search_stocks(q: str = Query("", description="Stock name or ticker query")):
-    results = search_stock_catalog(q)
+def search_stocks(
+    q: str = Query("", description="Stock name or ticker query"),
+    sector: str = Query("", description="Optional sector filter"),
+):
+    results = search_stock_catalog(q, sector=sector)
     return {
         "query": q,
+        "sector": sector,
+        "sectors": SECTOR_OPTIONS,
         "results": results,
+    }
+
+
+@app.get("/sectors")
+def sectors():
+    return {
+        "sectors": SECTOR_OPTIONS,
     }
 
 

@@ -109,6 +109,10 @@ h1 {
   font-weight: 700;
 }
 
+.filter-row {
+  margin-bottom: 12px;
+}
+
 .search-row {
   display: flex;
   gap: 12px;
@@ -155,7 +159,15 @@ h1 {
 }
 
 .suggestion-name {
+  display: block;
   font-weight: 700;
+}
+
+.suggestion-sector {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .suggestion-symbol {
@@ -164,11 +176,13 @@ h1 {
 }
 
 input,
+select,
 button {
   font: inherit;
 }
 
-input {
+input,
+select {
   width: 100%;
   padding: 16px 18px;
   border-radius: 16px;

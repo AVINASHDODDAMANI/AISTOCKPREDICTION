@@ -2,6 +2,7 @@ const API_BASE = "";
 
 const elements = {
   symbol: document.getElementById("symbol"),
+  sectorFilter: document.getElementById("sectorFilter"),
   analyzeBtn: document.getElementById("analyzeBtn"),
   refreshOverview: document.getElementById("refreshOverview"),
   reportTitle: document.getElementById("reportTitle"),
@@ -42,7 +43,7 @@ function formatPercent(value) {
 }
 
 function signalClass(signal) {
-  const clean = (signal || "").toUpperCase();
+  const clean = String(signal || "").toUpperCase();
   if (clean.includes("BUY") || clean.includes("POSITIVE")) return "bullish";
   if (clean.includes("SELL") || clean.includes("NEGATIVE")) return "bearish";
   return "neutral";
@@ -57,10 +58,24 @@ function escapeHtml(text) {
     .replace(/'/g, "&#039;");
 }
 
+function selectedSector() {
+  return elements.sectorFilter ? elements.sectorFilter.value : "";
+}
+
 function hideSuggestions() {
   activeSuggestions = [];
   elements.searchSuggestions.innerHTML = "";
   elements.searchSuggestions.classList.remove("visible");
+}
+
+function renderSectorOptions(sectors) {
+  if (!elements.sectorFilter) return;
+
+  const options = [`<option value="">All Sectors</option>`];
+  (Array.isArray(sectors) ? sectors : []).forEach((sector) => {
+    options.push(`<option value="${escapeHtml(sector)}">${escapeHtml(sector)}</option>`);
+  });
+  elements.sectorFilter.innerHTML = options.join("");
 }
 
 function renderSuggestions(results) {
@@ -75,7 +90,10 @@ function renderSuggestions(results) {
     .map(
       (stock, index) => `
         <button class="suggestion-item" type="button" data-index="${index}">
-          <span class="suggestion-name">${escapeHtml(stock.name)}</span>
+          <span>
+            <span class="suggestion-name">${escapeHtml(stock.name)}</span>
+            <span class="suggestion-sector">${escapeHtml(stock.sector || "")}</span>
+          </span>
           <span class="suggestion-symbol">${escapeHtml(stock.symbol)}</span>
         </button>
       `
@@ -102,17 +120,38 @@ async function loadSuggestions(query) {
     return;
   }
 
+  const sector = selectedSector();
+  const url = `${API_BASE}/search-stocks?q=${encodeURIComponent(trimmed)}&sector=${encodeURIComponent(sector)}`;
+
   try {
-    const response = await fetch(`${API_BASE}/search-stocks?q=${encodeURIComponent(trimmed)}`);
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`Server returned ${response.status}`);
     }
 
     const data = await response.json();
+    renderSectorOptions(data.sectors || []);
+    if (elements.sectorFilter && sector) {
+      elements.sectorFilter.value = sector;
+    }
     renderSuggestions(data.results || []);
   } catch (error) {
     console.error(error);
     hideSuggestions();
+  }
+}
+
+async function loadSectors() {
+  try {
+    const response = await fetch(`${API_BASE}/sectors`);
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    renderSectorOptions(data.sectors || []);
+  } catch (error) {
+    console.error(error);
   }
 }
 
@@ -157,7 +196,7 @@ function renderAnalysis(data) {
     ? data.reasons
     : ["No indicator explanation was returned."];
 
-  elements.reasonsList.innerHTML = reasons.map((reason) => `<li>${reason}</li>`).join("");
+  elements.reasonsList.innerHTML = reasons.map((reason) => `<li>${escapeHtml(reason)}</li>`).join("");
 }
 
 function renderError(message) {
@@ -165,11 +204,11 @@ function renderError(message) {
   elements.summaryText.textContent = message;
   elements.signalBadge.textContent = "ERROR";
   elements.signalBadge.className = "signal-badge bearish";
-  elements.chartContainer.innerHTML = `<div class="chart-empty">${message}</div>`;
+  elements.chartContainer.innerHTML = `<div class="chart-empty">${escapeHtml(message)}</div>`;
   elements.newsSentimentBadge.textContent = "ERROR";
   elements.newsSentimentBadge.className = "signal-badge bearish";
   elements.newsSummary.textContent = message;
-  elements.newsList.innerHTML = `<div class="news-empty">${message}</div>`;
+  elements.newsList.innerHTML = `<div class="news-empty">${escapeHtml(message)}</div>`;
 }
 
 function renderNews(newsData) {
@@ -180,7 +219,7 @@ function renderNews(newsData) {
 
   if (newsData && newsData.error) {
     elements.newsSummary.textContent = "News feed could not be loaded for this stock.";
-    elements.newsList.innerHTML = `<div class="news-empty">${newsData.error}</div>`;
+    elements.newsList.innerHTML = `<div class="news-empty">${escapeHtml(newsData.error)}</div>`;
     return;
   }
 
@@ -197,8 +236,8 @@ function renderNews(newsData) {
       (article) => `
         <article class="news-card">
           <div class="news-card-top">
-            <span class="news-pill ${signalClass(article.sentiment)}">${article.sentiment}</span>
-            <span class="news-date">${article.published_at || "Unknown date"}</span>
+            <span class="news-pill ${signalClass(article.sentiment)}">${escapeHtml(article.sentiment)}</span>
+            <span class="news-date">${escapeHtml(article.published_at || "Unknown date")}</span>
           </div>
           <a href="${article.link}" target="_blank" rel="noreferrer" class="news-link">${escapeHtml(article.title)}</a>
         </article>
@@ -217,8 +256,8 @@ function renderChart(historyData) {
   }
 
   const closes = points.map((point) => Number(point.close));
-  const min = Math.min(...closes);
-  const max = Math.max(...closes);
+  const min = Math.min.apply(null, closes);
+  const max = Math.max.apply(null, closes);
   const width = 760;
   const height = 260;
   const padding = 20;
@@ -252,7 +291,7 @@ function renderChart(historyData) {
     <div class="chart-footer">
       <span>Start: ${formatCurrency(firstPrice)}</span>
       <span>Latest: ${formatCurrency(latestPrice)}</span>
-      <span>${latestDate}</span>
+      <span>${escapeHtml(latestDate)}</span>
     </div>
   `;
 }
@@ -376,6 +415,14 @@ elements.symbol.addEventListener("input", (event) => {
   loadSuggestions(event.target.value);
 });
 
+if (elements.sectorFilter) {
+  elements.sectorFilter.addEventListener("change", () => {
+    if (elements.symbol.value.trim()) {
+      loadSuggestions(elements.symbol.value);
+    }
+  });
+}
+
 document.addEventListener("click", (event) => {
   const searchBox = document.querySelector(".search-box");
   if (searchBox && !searchBox.contains(event.target)) {
@@ -389,4 +436,5 @@ document.querySelectorAll(".chip").forEach((chip) => {
   });
 });
 
+loadSectors();
 loadWatchlist();
