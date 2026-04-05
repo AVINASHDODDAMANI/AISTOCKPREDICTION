@@ -5,14 +5,6 @@ const API = {
   search: "/api/search",
   resolve: (query) => `/api/resolve?q=${encodeURIComponent(query)}`,
   dashboard: (symbol, timeframe) => `/api/dashboard/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}`,
-  compare: (symbols, timeframe) => `/api/compare?symbols=${encodeURIComponent(symbols.join(","))}&timeframe=${encodeURIComponent(timeframe)}`,
-  watchlist: (timeframe) => `/api/watchlist?timeframe=${encodeURIComponent(timeframe)}`,
-  addWatchlist: "/api/watchlist",
-  deleteWatchlist: (symbol) => `/api/watchlist/${encodeURIComponent(symbol)}`,
-  register: "/api/auth/register",
-  login: "/api/auth/login",
-  me: "/api/auth/me",
-  logout: "/api/auth/logout",
 };
 
 const TIMEFRAME_OPTIONS = [
@@ -27,16 +19,10 @@ function formatCurrency(value) {
   return `Rs ${Number(value).toFixed(2)}`;
 }
 
-function formatPercent(value) {
-  if (value === null || value === undefined) return "--";
-  const prefix = value > 0 ? "+" : "";
-  return `${prefix}${Number(value).toFixed(2)}%`;
-}
-
 function signalTone(signal) {
   const clean = String(signal || "").toUpperCase();
-  if (clean.includes("BUY") || clean.includes("BULLISH") || clean.includes("POSITIVE")) return "bull";
-  if (clean.includes("SELL") || clean.includes("BEARISH") || clean.includes("NEGATIVE")) return "bear";
+  if (clean.includes("BUY") || clean.includes("BULLISH")) return "bull";
+  if (clean.includes("SELL") || clean.includes("BEARISH")) return "bear";
   return "neutral";
 }
 
@@ -125,85 +111,22 @@ function MetricCard({ label, value, tone }) {
 }
 
 function App() {
-  const [meta, setMeta] = useState({ sectors: [], watchlist: [] });
   const [query, setQuery] = useState("RELIANCE");
-  const [searchResults, setSearchResults] = useState([]);
   const [selectedTimeframe, setSelectedTimeframe] = useState("1d");
   const [dashboard, setDashboard] = useState(null);
-  const [watchlist, setWatchlist] = useState([]);
-  const [compareInputs, setCompareInputs] = useState(["RELIANCE", "TCS"]);
-  const [compareResults, setCompareResults] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [watchlistLoading, setWatchlistLoading] = useState(false);
-  const [compareLoading, setCompareLoading] = useState(false);
   const [error, setError] = useState("");
-  const [watchlistInput, setWatchlistInput] = useState("");
-  const [resolvedSearch, setResolvedSearch] = useState(null);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [authMode, setAuthMode] = useState("login");
-  const [authMethod, setAuthMethod] = useState("phone");
-  const [authForm, setAuthForm] = useState({ fullName: "", phone: "", email: "", password: "" });
-  const [authToken, setAuthToken] = useState(localStorage.getItem("authToken") || "");
-  const [currentUser, setCurrentUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(false);
-
-  const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
     async function boot() {
       try {
-        const metaPayload = await fetchJson(API.meta);
-        setMeta(metaPayload);
-        if (authToken) {
-          try {
-            const me = await fetchJson(API.me, {
-              headers: { Authorization: `Bearer ${authToken}` },
-            });
-            setCurrentUser(me.user);
-          } catch (_) {
-            localStorage.removeItem("authToken");
-            setAuthToken("");
-          }
-        }
-        await Promise.all([
-          loadDashboard(query, selectedTimeframe),
-          loadWatchlist(selectedTimeframe),
-          loadCompare(compareInputs, selectedTimeframe),
-        ]);
+        await loadDashboard(query, selectedTimeframe);
       } catch (err) {
         setError(err.message);
       }
     }
     boot();
   }, []);
-
-  useEffect(() => {
-    function handleDocumentClick(event) {
-      const stack = document.querySelector(".search-stack");
-      if (stack && !stack.contains(event.target)) {
-        setSearchOpen(false);
-      }
-    }
-
-    document.addEventListener("click", handleDocumentClick);
-    return () => document.removeEventListener("click", handleDocumentClick);
-  }, []);
-
-  useEffect(() => {
-    if (!query.trim()) {
-      setSearchResults([]);
-      setSearchOpen(false);
-      return;
-    }
-    const handle = setTimeout(async () => {
-      try {
-        const payload = await fetchJson(`${API.search}?q=${encodeURIComponent(query)}`);
-        setSearchResults(payload.results || []);
-        setSearchOpen(Boolean(payload.results && payload.results.length));
-      } catch (_) {}
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [query]);
 
   async function loadDashboard(symbol, timeframe) {
     setLoading(true);
@@ -218,34 +141,10 @@ function App() {
     }
   }
 
-  async function loadWatchlist(timeframe) {
-    setWatchlistLoading(true);
-    try {
-      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
-      const payload = await fetchJson(API.watchlist(timeframe), headers ? { headers } : undefined);
-      setWatchlist(payload.items || []);
-    } finally {
-      setWatchlistLoading(false);
-    }
-  }
-
-  async function loadCompare(symbols, timeframe) {
-    setCompareLoading(true);
-    try {
-      const payload = await fetchJson(API.compare(symbols, timeframe));
-      setCompareResults(payload.results || []);
-    } catch (_) {
-      setCompareResults([]);
-    } finally {
-      setCompareLoading(false);
-    }
-  }
-
   async function resolveSelection(rawQuery) {
     const trimmed = rawQuery.trim();
     if (!trimmed) return null;
     const resolved = await fetchJson(API.resolve(trimmed));
-    setResolvedSearch(resolved);
     return resolved;
   }
 
@@ -253,428 +152,59 @@ function App() {
     const resolved = await resolveSelection(rawQuery);
     if (!resolved || !resolved.symbol) return;
     setQuery(resolved.name || resolved.symbol);
-    setSearchResults([]);
-    setSearchOpen(false);
     await loadDashboard(resolved.symbol, selectedTimeframe);
   }
 
   async function handleTimeframeChange(next) {
     setSelectedTimeframe(next);
-    await Promise.all([
-      loadDashboard((dashboard && dashboard.symbol) || (resolvedSearch && resolvedSearch.symbol) || query, next),
-      loadWatchlist(next),
-      loadCompare(compareInputs, next),
-    ]);
-  }
-
-  async function addToWatchlist() {
-    if (!authToken) {
-      setError("Please login first to save your watchlist.");
-      return;
-    }
-    if (!watchlistInput.trim()) return;
-    const resolved = await resolveSelection(watchlistInput);
-    if (!resolved || !resolved.symbol) return;
-    await fetchJson(API.addWatchlist, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
-      body: JSON.stringify({ symbol: resolved.symbol }),
-    });
-    setWatchlistInput("");
-    await loadWatchlist(selectedTimeframe);
-  }
-
-  async function removeFromWatchlist(symbol) {
-    if (!authToken) {
-      setError("Please login first to manage your watchlist.");
-      return;
-    }
-    await fetchJson(API.deleteWatchlist(symbol), {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${authToken}` },
-    });
-    await loadWatchlist(selectedTimeframe);
-  }
-
-  async function compareNow() {
-    const cleaned = compareInputs.map((item) => item.trim()).filter(Boolean).slice(0, 3);
-    if (cleaned.length < 2) return;
-    setCompareInputs(cleaned);
-    await loadCompare(cleaned, selectedTimeframe);
-  }
-
-  const heroSuggestions = useMemo(() => searchResults.slice(0, 8), [searchResults]);
-
-  async function submitAuth(mode) {
-    setAuthLoading(true);
-    setError("");
-    try {
-      const url = mode === "register" ? API.register : API.login;
-      const payload = mode === "register"
-        ? authForm
-        : {
-            identifier: authMethod === "phone" ? authForm.phone : authForm.email,
-            password: authForm.password,
-          };
-      const result = await fetchJson(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      localStorage.setItem("authToken", result.token);
-      setAuthToken(result.token);
-      setCurrentUser(result.user);
-      setAuthForm({ fullName: "", phone: "", email: "", password: "" });
-      await loadWatchlist(selectedTimeframe);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setAuthLoading(false);
-    }
-  }
-
-  async function logout() {
-    if (!authToken) return;
-    try {
-      await fetchJson(API.logout, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${authToken}` },
-      });
-    } catch (_) {}
-    localStorage.removeItem("authToken");
-    setAuthToken("");
-    setCurrentUser(null);
-    await loadWatchlist(selectedTimeframe);
+    await loadDashboard((dashboard && dashboard.symbol) || query, next);
   }
 
   return (
     <div className="app-shell">
-      <header className="hero-shell">
-        <div className="hero-copy">
-          <p className="eyebrow">AI Stock Trading Dashboard</p>
-          <h1>Trade-ready stock analysis with indicators, signals, and multi-timeframe context.</h1>
-          <p className="hero-text">
-            Analyze Indian stocks with candlestick charts, RSI, MACD, Bollinger Bands, AI signals,
-            dynamic explanations, saved watchlists, and side-by-side comparison.
-          </p>
-          <div className="preview-banner">
-            <strong>Preview first.</strong>
-            <span>You can explore the dashboard without logging in. Create an account only when you want saved watchlists and deeper personalized usage.</span>
-          </div>
-
-          <div className="hero-controls">
-            <div className="search-stack">
-              <div className="search-row">
-                <input
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    setSearchOpen(true);
-                  }}
-                  onFocus={() => {
-                    if (heroSuggestions.length) setSearchOpen(true);
-                  }}
-                  placeholder="Search stock, index, or ticker"
-                />
-                <button onClick={() => submitDashboard(query)}>Analyze</button>
-              </div>
-              {searchOpen && heroSuggestions.length > 0 && (
-                <div className="search-dropdown" onMouseDown={(event) => event.preventDefault()}>
-                  {heroSuggestions.map((item) => (
-                    <button
-                      key={`${item.symbol}-${item.name}`}
-                      className="search-result"
-                      onClick={() => {
-                        setQuery(item.name || item.symbol);
-                        submitDashboard(item.symbol);
-                      }}
-                    >
-                      <span>
-                        <strong>{item.name}</strong>
-                        <small>{item.sector || item.instrument_type}</small>
-                      </span>
-                      <span>{item.symbol}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="timeframe-tabs">
-              {TIMEFRAME_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  className={selectedTimeframe === option.value ? "active-tab" : ""}
-                  onClick={() => handleTimeframeChange(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      <div className="top-bar">
+        <div className="search-controls">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Enter stock symbol"
+          />
+          <select value={selectedTimeframe} onChange={(event) => handleTimeframeChange(event.target.value)}>
+            {TIMEFRAME_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+          <button onClick={() => submitDashboard(query)}>Analyze</button>
         </div>
+      </div>
 
-        <div className="hero-card">
-          <p className="card-label">Access</p>
-          <ul>
-            <li>Guest users can view live dashboard analysis</li>
-            <li>Registered users can save watchlists and personal usage data</li>
-            <li>Login works with phone number or email plus password</li>
-            <li>Google sign-in can be added later with OAuth credentials</li>
-          </ul>
-
-          <div className="auth-panel">
-            <p className="card-label">Register Or Login</p>
-            {currentUser ? (
-              <div className="auth-logged">
-                <strong>{currentUser.fullName}</strong>
-                <small>{currentUser.email || currentUser.phone}</small>
-                <button className="ghost-btn" onClick={logout}>Logout</button>
-              </div>
-            ) : (
-              <div className="auth-form">
-                <div className="auth-tabs">
-                  <button className={authMode === "login" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("login")}>Login</button>
-                    <button className={authMode === "register" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("register")}>Register</button>
-                </div>
-                <div className="auth-tabs">
-                  <button className={authMethod === "phone" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMethod("phone")}>Use Phone</button>
-                  <button className={authMethod === "email" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMethod("email")}>Use Email</button>
-                </div>
-                {authMode === "register" && (
-                  <input
-                    value={authForm.fullName}
-                    onChange={(event) => setAuthForm({ ...authForm, fullName: event.target.value })}
-                    placeholder="Full name"
-                  />
-                )}
-                {authMethod === "phone" ? (
-                  <input
-                    value={authForm.phone}
-                    onChange={(event) => setAuthForm({ ...authForm, phone: event.target.value })}
-                    placeholder="Phone number"
-                  />
-                ) : (
-                  <input
-                    value={authForm.email}
-                    onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
-                    placeholder="Email address"
-                  />
-                )}
-                <input
-                  type="password"
-                  value={authForm.password}
-                  onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
-                  placeholder="Password"
-                />
-                <button onClick={() => submitAuth(authMode)} disabled={authLoading}>
-                  {authLoading ? "Please wait..." : authMode === "register" ? "Create Account" : "Login"}
-                </button>
-              </div>
-            )}
-          </div>
+      <div className="main-content">
+        <div className="chart-section">
+          {dashboard && dashboard.chart ? <CandlestickChart chart={dashboard.chart} /> : <div className="chart-placeholder">No chart yet.</div>}
         </div>
-      </header>
-
-      {error && <div className="error-banner">{error}</div>}
-
-      <main className="dashboard-grid">
-        <section className="panel main-panel">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Main Analysis</p>
-              <h2>{dashboard ? `${dashboard.name} (${dashboard.symbol})` : "Waiting for analysis"}</h2>
-            </div>
-            <span className={`signal-pill ${signalTone(dashboard && dashboard.signal)}`}>
-              {dashboard ? dashboard.signal : "NO SIGNAL"}
-            </span>
-          </div>
-
-          {loading && <div className="loading-strip">Loading market data, indicators, and explanations...</div>}
-          {loading && <div className="spinner-row"><span className="spinner" /> <span>Fetching fresh market data...</span></div>}
-
-          <div className="metrics-grid">
-            <MetricCard label="Current Price" value={dashboard ? formatCurrency(dashboard.price) : "--"} />
-            <MetricCard label="Confidence" value={dashboard ? `${dashboard.confidence}%` : "--"} />
-            <MetricCard label="Trend" value={dashboard ? dashboard.trend : "--"} tone={signalTone(dashboard && dashboard.signal)} />
+        <div className="cards-section">
+          <MetricCard label="Current Price" value={dashboard ? formatCurrency(dashboard.price) : "--"} />
+          <MetricCard label="Trend" value={dashboard ? dashboard.trend : "--"} tone={signalTone(dashboard && dashboard.signal)} />
+          <MetricCard label="Confidence" value={dashboard ? `${dashboard.confidence}%` : "--"} />
+          <div className="levels-section">
             <MetricCard label="Entry" value={dashboard ? formatCurrency(dashboard.entry) : "--"} />
             <MetricCard label="Target" value={dashboard ? formatCurrency(dashboard.target) : "--"} />
             <MetricCard label="Stop Loss" value={dashboard ? formatCurrency(dashboard.stopLoss) : "--"} />
           </div>
+        </div>
+      </div>
 
-          <div className="chart-card">
-            <div className="chart-header">
-              <div>
-                <h3>Candlestick Chart</h3>
-                <p>{dashboard ? `${dashboard.timeframeLabel} candlesticks with Bollinger Bands` : "Load a symbol to render the chart"}</p>
-              </div>
-            </div>
-            {dashboard && dashboard.chart ? <CandlestickChart chart={dashboard.chart} /> : <div className="chart-placeholder">No chart yet.</div>}
-          </div>
+      <div className="bottom-section">
+        <h3>AI Explanation</h3>
+        <ul>
+          {dashboard && dashboard.dynamicExplanation
+            ? dashboard.dynamicExplanation.bullets.map((item) => <li key={item}>{item}</li>)
+            : <li>Run an analysis to generate the market explanation.</li>}
+        </ul>
+      </div>
 
-          <div className="indicator-grid">
-            <MetricCard label="RSI" value={dashboard ? dashboard.indicators.rsi : "--"} />
-            <MetricCard label="MACD" value={dashboard ? dashboard.indicators.macd : "--"} />
-            <MetricCard label="MACD Signal" value={dashboard ? dashboard.indicators.macdSignal : "--"} />
-            <MetricCard label="BB Upper" value={dashboard ? formatCurrency(dashboard.indicators.bollingerUpper) : "--"} />
-            <MetricCard label="BB Mid" value={dashboard ? formatCurrency(dashboard.indicators.bollingerMiddle) : "--"} />
-            <MetricCard label="BB Lower" value={dashboard ? formatCurrency(dashboard.indicators.bollingerLower) : "--"} />
-          </div>
-
-          <div className="explanation-card">
-            <h3>AI Explanation</h3>
-            <p>{dashboard && dashboard.dynamicExplanation ? dashboard.dynamicExplanation.summary : "No explanation available yet."}</p>
-            <ul>
-              {dashboard && dashboard.dynamicExplanation
-                ? dashboard.dynamicExplanation.bullets.map((item) => <li key={item}>{item}</li>)
-                : <li>Run an analysis to generate the market explanation.</li>}
-            </ul>
-          </div>
-
-          <div className="timeframe-grid">
-            {dashboard && dashboard.multiTimeframe && dashboard.multiTimeframe.length > 0 ? (
-              dashboard.multiTimeframe.map((item) => (
-                <article key={item.timeframe} className="mini-panel">
-                  <span>{item.timeframe.toUpperCase()}</span>
-                  <strong className={`${signalTone(item.signal)}-text`}>{item.signal}</strong>
-                  <p>{item.summary}</p>
-                  <small>{item.confidence}% confidence</small>
-                </article>
-              ))
-            ) : (
-              <div className="mini-panel">Multi-timeframe analysis will appear here.</div>
-            )}
-          </div>
-        </section>
-
-        <section className="panel side-panel">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Watchlist</p>
-              <h2>Saved Signals</h2>
-            </div>
-          </div>
-
-          {!currentUser && (
-            <div className="lock-banner">
-              <strong>Login required for saved data</strong>
-              <span>Guests can explore analysis, but watchlist saving is enabled after login or registration.</span>
-            </div>
-          )}
-
-          <div className="inline-form">
-            <input
-              value={watchlistInput}
-              onChange={(event) => setWatchlistInput(event.target.value)}
-              placeholder="Add symbol like INFY"
-            />
-            <button onClick={addToWatchlist}>Save</button>
-          </div>
-
-          {watchlistLoading ? (
-            <div className="loading-strip">Refreshing watchlist...</div>
-          ) : (
-            <div className="watchlist-stack">
-              {watchlist.map((item) => (
-                <article key={item.symbol} className="watch-item">
-                  <button className="watch-main" onClick={() => submitDashboard(item.symbol)}>
-                    <strong>{item.name || item.symbol}</strong>
-                    <span>{item.signal}</span>
-                    <small>{item.symbol} · {formatCurrency(item.price)} · {item.confidence}%</small>
-                  </button>
-                  <button className="ghost-btn" onClick={() => removeFromWatchlist(item.symbol)}>Remove</button>
-                </article>
-              ))}
-            </div>
-          )}
-
-          <div className="news-block">
-            <h3>News Sentiment</h3>
-            <div className={`signal-pill ${signalTone(dashboard && dashboard.news && dashboard.news.overall)}`}>
-              {dashboard && dashboard.news ? dashboard.news.overall : "Neutral"}
-            </div>
-            <div className="news-list">
-              {dashboard && dashboard.news && dashboard.news.articles && dashboard.news.articles.length > 0 ? (
-                dashboard.news.articles.map((article) => (
-                  <a key={`${article.link}-${article.title}`} href={article.link} target="_blank" rel="noreferrer" className="news-item">
-                    <strong>{article.title}</strong>
-                    <small>{article.sentiment}</small>
-                  </a>
-                ))
-              ) : (
-                <div className="news-item">No recent headlines available.</div>
-              )}
-            </div>
-          </div>
-        </section>
-
-        <section className="panel compare-panel">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Comparison</p>
-              <h2>Compare 2-3 Companies</h2>
-            </div>
-          </div>
-
-          <div className="compare-form">
-            {compareInputs.map((value, index) => (
-              <input
-                key={index}
-                value={value}
-                onChange={(event) => {
-                  const next = [...compareInputs];
-                  next[index] = event.target.value;
-                  setCompareInputs(next);
-                }}
-                placeholder={`Symbol ${index + 1}`}
-              />
-            ))}
-            {compareInputs.length < 3 && (
-              <button className="ghost-btn" onClick={() => setCompareInputs([...compareInputs, ""])}>
-                Add Third
-              </button>
-            )}
-            <button onClick={compareNow}>Compare</button>
-          </div>
-
-          {compareLoading ? (
-            <div className="loading-strip">Comparing symbols...</div>
-          ) : (
-            <div className="table-wrap">
-              <table className="compare-table">
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Price</th>
-                    <th>Signal</th>
-                    <th>Confidence</th>
-                    <th>Trend</th>
-                    <th>Entry</th>
-                    <th>Target</th>
-                    <th>Stop</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {compareResults.length > 0 ? compareResults.map((item) => (
-                    <tr key={item.symbol}>
-                      <td>{item.name || item.symbol}<br /><small>{item.symbol}</small></td>
-                      <td>{formatCurrency(item.price)}</td>
-                      <td className={`${signalTone(item.signal)}-text`}>{item.signal}</td>
-                      <td>{item.confidence}%</td>
-                      <td>{item.trend}</td>
-                      <td>{formatCurrency(item.entry)}</td>
-                      <td>{formatCurrency(item.target)}</td>
-                      <td>{formatCurrency(item.stopLoss)}</td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="8">Comparison results will appear here.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </main>
+      {loading && <div className="loading-overlay"><span className="spinner" /> <span>Loading...</span></div>}
+      {error && <div className="error-banner">{error}</div>}
     </div>
   );
 }
