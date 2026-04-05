@@ -25,11 +25,10 @@ const elements = {
   newsSentimentBadge: document.getElementById("newsSentimentBadge"),
   newsSummary: document.getElementById("newsSummary"),
   newsList: document.getElementById("newsList"),
+  searchSuggestions: document.getElementById("searchSuggestions"),
 };
 
-function normalizeSymbol(symbol) {
-  return symbol.replace(".NS", "").trim().toUpperCase();
-}
+let activeSuggestions = [];
 
 function formatCurrency(value) {
   if (value === null || value === undefined) return "--";
@@ -44,9 +43,77 @@ function formatPercent(value) {
 
 function signalClass(signal) {
   const clean = (signal || "").toUpperCase();
-  if (clean.includes("BUY")) return "bullish";
-  if (clean.includes("SELL")) return "bearish";
+  if (clean.includes("BUY") || clean.includes("POSITIVE")) return "bullish";
+  if (clean.includes("SELL") || clean.includes("NEGATIVE")) return "bearish";
   return "neutral";
+}
+
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function hideSuggestions() {
+  activeSuggestions = [];
+  elements.searchSuggestions.innerHTML = "";
+  elements.searchSuggestions.classList.remove("visible");
+}
+
+function renderSuggestions(results) {
+  activeSuggestions = Array.isArray(results) ? results : [];
+
+  if (!activeSuggestions.length) {
+    hideSuggestions();
+    return;
+  }
+
+  elements.searchSuggestions.innerHTML = activeSuggestions
+    .map(
+      (stock, index) => `
+        <button class="suggestion-item" type="button" data-index="${index}">
+          <span class="suggestion-name">${escapeHtml(stock.name)}</span>
+          <span class="suggestion-symbol">${escapeHtml(stock.symbol)}</span>
+        </button>
+      `
+    )
+    .join("");
+
+  elements.searchSuggestions.classList.add("visible");
+
+  elements.searchSuggestions.querySelectorAll(".suggestion-item").forEach((item) => {
+    item.addEventListener("click", () => {
+      const stock = activeSuggestions[Number(item.dataset.index)];
+      if (!stock) return;
+      elements.symbol.value = stock.name;
+      hideSuggestions();
+      analyzeStock(stock.symbol);
+    });
+  });
+}
+
+async function loadSuggestions(query) {
+  const trimmed = query.trim();
+  if (!trimmed) {
+    hideSuggestions();
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}/search-stocks?q=${encodeURIComponent(trimmed)}`);
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
+    }
+
+    const data = await response.json();
+    renderSuggestions(data.results || []);
+  } catch (error) {
+    console.error(error);
+    hideSuggestions();
+  }
 }
 
 function setLoadingState() {
@@ -62,7 +129,11 @@ function setLoadingState() {
 }
 
 function renderAnalysis(data) {
-  elements.reportTitle.textContent = `${data.company_symbol} Analysis`;
+  const heading = data.company_name
+    ? `${data.company_name} (${data.company_symbol})`
+    : `${data.company_symbol} Analysis`;
+
+  elements.reportTitle.textContent = heading;
   elements.summaryText.textContent = data.summary || "No summary available.";
   elements.signalBadge.textContent = data.signal || "NO SIGNAL";
   elements.signalBadge.className = `signal-badge ${signalClass(data.signal)}`;
@@ -71,7 +142,8 @@ function renderAnalysis(data) {
   elements.trendValue.textContent = data.trend || "--";
   elements.confidenceValue.textContent =
     data.confidence !== null && data.confidence !== undefined ? `${data.confidence}%` : "--";
-  elements.rsiValue.textContent = data.rsi ?? "--";
+  elements.rsiValue.textContent =
+    data.rsi !== null && data.rsi !== undefined ? data.rsi : "--";
   elements.momentumValue.textContent = formatPercent(data.momentum_5d);
   elements.volatilityValue.textContent = formatPercent(data.volatility);
   elements.entryValue.textContent = formatCurrency(data.entry_zone);
@@ -85,9 +157,7 @@ function renderAnalysis(data) {
     ? data.reasons
     : ["No indicator explanation was returned."];
 
-  elements.reasonsList.innerHTML = reasons
-    .map((reason) => `<li>${reason}</li>`)
-    .join("");
+  elements.reasonsList.innerHTML = reasons.map((reason) => `<li>${reason}</li>`).join("");
 }
 
 function renderError(message) {
@@ -103,12 +173,12 @@ function renderError(message) {
 }
 
 function renderNews(newsData) {
-  const articles = Array.isArray(newsData?.articles) ? newsData.articles : [];
-  const overall = newsData?.overall_sentiment || "Unavailable";
+  const articles = newsData && Array.isArray(newsData.articles) ? newsData.articles : [];
+  const overall = newsData && newsData.overall_sentiment ? newsData.overall_sentiment : "Unavailable";
   elements.newsSentimentBadge.textContent = overall.toUpperCase();
   elements.newsSentimentBadge.className = `signal-badge ${signalClass(overall)}`;
 
-  if (newsData?.error) {
+  if (newsData && newsData.error) {
     elements.newsSummary.textContent = "News feed could not be loaded for this stock.";
     elements.newsList.innerHTML = `<div class="news-empty">${newsData.error}</div>`;
     return;
@@ -130,7 +200,7 @@ function renderNews(newsData) {
             <span class="news-pill ${signalClass(article.sentiment)}">${article.sentiment}</span>
             <span class="news-date">${article.published_at || "Unknown date"}</span>
           </div>
-          <a href="${article.link}" target="_blank" rel="noreferrer" class="news-link">${article.title}</a>
+          <a href="${article.link}" target="_blank" rel="noreferrer" class="news-link">${escapeHtml(article.title)}</a>
         </article>
       `
     )
@@ -138,7 +208,7 @@ function renderNews(newsData) {
 }
 
 function renderChart(historyData) {
-  const points = Array.isArray(historyData?.points) ? historyData.points : [];
+  const points = historyData && Array.isArray(historyData.points) ? historyData.points : [];
   elements.chartMeta.textContent = `Last ${points.length || 0} trading sessions`;
 
   if (!points.length) {
@@ -197,9 +267,7 @@ async function loadChart(symbol) {
     renderChart(data);
   } catch (error) {
     console.error(error);
-    elements.chartContainer.innerHTML = `
-      <div class="chart-empty">Price history could not be loaded from the API.</div>
-    `;
+    elements.chartContainer.innerHTML = `<div class="chart-empty">Price history could not be loaded from the API.</div>`;
   }
 }
 
@@ -220,31 +288,33 @@ async function loadNews(symbol) {
   }
 }
 
-async function analyzeStock(symbolOverride) {
-  const rawValue = symbolOverride || elements.symbol.value;
-  const symbol = normalizeSymbol(rawValue);
+async function analyzeStock(queryOverride) {
+  const rawValue = queryOverride || elements.symbol.value;
+  const query = rawValue.trim();
 
-  if (!symbol) {
-    renderError("Enter a valid NSE symbol like RELIANCE or TCS.");
+  if (!query) {
+    renderError("Enter a valid NSE symbol or company name like RELIANCE or Infosys.");
     return;
   }
 
-  elements.symbol.value = symbol;
+  hideSuggestions();
+  elements.symbol.value = query;
   setLoadingState();
 
   try {
-    const response = await fetch(`${API_BASE}/analyze?symbol=${encodeURIComponent(symbol)}`);
+    const response = await fetch(`${API_BASE}/analyze?symbol=${encodeURIComponent(query)}`);
     if (!response.ok) {
       throw new Error(`Server returned ${response.status}`);
     }
 
     const data = await response.json();
+    elements.symbol.value = data.company_name || data.company_symbol || query;
     renderAnalysis(data);
-    loadChart(symbol);
-    loadNews(symbol);
+    loadChart(data.company_symbol || query);
+    loadNews(data.company_symbol || query);
   } catch (error) {
     console.error(error);
-    renderError("Could not connect to the API. Start the FastAPI server and try again.");
+    renderError("Could not connect to the API. Please try again in a moment.");
   }
 }
 
@@ -252,10 +322,10 @@ function renderWatchlistCard(stock) {
   return `
     <article class="watch-card ${signalClass(stock.signal)}" data-symbol="${stock.company_symbol}">
       <div class="watch-card-top">
-        <strong>${stock.company_symbol}</strong>
-        <span>${stock.signal || "NO SIGNAL"}</span>
+        <strong>${escapeHtml(stock.company_symbol)}</strong>
+        <span>${escapeHtml(stock.signal || "NO SIGNAL")}</span>
       </div>
-      <p>${stock.trend || "Unavailable"} trend</p>
+      <p>${escapeHtml(stock.company_name || stock.company_symbol || "Unknown stock")}</p>
       <div class="watch-card-bottom">
         <span>${formatCurrency(stock.current_price)}</span>
         <span>${stock.confidence ? `${stock.confidence}% confidence` : "No confidence"}</span>
@@ -287,7 +357,7 @@ async function loadWatchlist() {
     console.error(error);
     elements.watchlistGrid.innerHTML = `
       <p class="watchlist-status">
-        Watchlist could not load. Make sure the FastAPI backend is running on ${API_BASE}.
+        Watchlist could not load right now. Please refresh in a moment.
       </p>
     `;
   }
@@ -299,6 +369,17 @@ elements.refreshOverview.addEventListener("click", loadWatchlist);
 elements.symbol.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     analyzeStock();
+  }
+});
+
+elements.symbol.addEventListener("input", (event) => {
+  loadSuggestions(event.target.value);
+});
+
+document.addEventListener("click", (event) => {
+  const searchBox = document.querySelector(".search-box");
+  if (searchBox && !searchBox.contains(event.target)) {
+    hideSuggestions();
   }
 });
 

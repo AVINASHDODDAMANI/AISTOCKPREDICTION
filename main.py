@@ -28,6 +28,49 @@ DEFAULT_WATCHLIST = [
     "SBIN",
 ]
 
+STOCK_CATALOG = [
+    {"symbol": "RELIANCE", "name": "Reliance Industries"},
+    {"symbol": "TCS", "name": "Tata Consultancy Services"},
+    {"symbol": "INFY", "name": "Infosys"},
+    {"symbol": "HDFCBANK", "name": "HDFC Bank"},
+    {"symbol": "ICICIBANK", "name": "ICICI Bank"},
+    {"symbol": "SBIN", "name": "State Bank of India"},
+    {"symbol": "BHARTIARTL", "name": "Bharti Airtel"},
+    {"symbol": "LT", "name": "Larsen and Toubro"},
+    {"symbol": "ITC", "name": "ITC"},
+    {"symbol": "KOTAKBANK", "name": "Kotak Mahindra Bank"},
+    {"symbol": "AXISBANK", "name": "Axis Bank"},
+    {"symbol": "ASIANPAINT", "name": "Asian Paints"},
+    {"symbol": "MARUTI", "name": "Maruti Suzuki"},
+    {"symbol": "SUNPHARMA", "name": "Sun Pharmaceutical"},
+    {"symbol": "TITAN", "name": "Titan Company"},
+    {"symbol": "ULTRACEMCO", "name": "UltraTech Cement"},
+    {"symbol": "NESTLEIND", "name": "Nestle India"},
+    {"symbol": "BAJFINANCE", "name": "Bajaj Finance"},
+    {"symbol": "BAJAJFINSV", "name": "Bajaj Finserv"},
+    {"symbol": "WIPRO", "name": "Wipro"},
+    {"symbol": "POWERGRID", "name": "Power Grid Corporation"},
+    {"symbol": "NTPC", "name": "NTPC"},
+    {"symbol": "TATAMOTORS", "name": "Tata Motors"},
+    {"symbol": "TATASTEEL", "name": "Tata Steel"},
+    {"symbol": "M&M", "name": "Mahindra and Mahindra"},
+    {"symbol": "INDUSINDBK", "name": "IndusInd Bank"},
+    {"symbol": "HCLTECH", "name": "HCL Technologies"},
+    {"symbol": "ADANIENT", "name": "Adani Enterprises"},
+    {"symbol": "ADANIPORTS", "name": "Adani Ports"},
+    {"symbol": "JSWSTEEL", "name": "JSW Steel"},
+    {"symbol": "HINDUNILVR", "name": "Hindustan Unilever"},
+    {"symbol": "TECHM", "name": "Tech Mahindra"},
+    {"symbol": "DRREDDY", "name": "Dr Reddys Laboratories"},
+    {"symbol": "CIPLA", "name": "Cipla"},
+    {"symbol": "GRASIM", "name": "Grasim Industries"},
+    {"symbol": "EICHERMOT", "name": "Eicher Motors"},
+    {"symbol": "HEROMOTOCO", "name": "Hero MotoCorp"},
+    {"symbol": "ONGC", "name": "Oil and Natural Gas Corporation"},
+    {"symbol": "COALINDIA", "name": "Coal India"},
+    {"symbol": "BPCL", "name": "Bharat Petroleum"},
+]
+
 POSITIVE_KEYWORDS = {
     "surge",
     "growth",
@@ -100,6 +143,53 @@ def fix_symbol(symbol: str) -> str:
     if not clean.endswith(".NS"):
         clean += ".NS"
     return clean
+
+
+def normalize_stock_query(query: str) -> str:
+    return query.upper().replace(".NS", "").strip()
+
+
+def resolve_stock_query(query: str) -> Dict[str, str]:
+    clean_query = normalize_stock_query(query)
+
+    for stock in STOCK_CATALOG:
+        if clean_query == stock["symbol"] or clean_query == stock["name"].upper():
+            return stock
+
+    for stock in STOCK_CATALOG:
+        name_upper = stock["name"].upper()
+        if clean_query in stock["symbol"] or clean_query in name_upper:
+            return stock
+
+    return {"symbol": clean_query, "name": clean_query.title()}
+
+
+def search_stock_catalog(query: str, limit: int = 8) -> List[Dict[str, str]]:
+    clean_query = normalize_stock_query(query)
+    if not clean_query:
+        return STOCK_CATALOG[:limit]
+
+    ranked_matches = []
+    for stock in STOCK_CATALOG:
+        symbol = stock["symbol"]
+        name = stock["name"]
+        name_upper = name.upper()
+
+        score = 0
+        if symbol.startswith(clean_query):
+            score += 4
+        if name_upper.startswith(clean_query):
+            score += 5
+        if clean_query in symbol:
+            score += 2
+        if clean_query in name_upper:
+            score += 3
+
+        if score > 0:
+            ranked_matches.append((score, stock))
+
+    ranked_matches.sort(key=lambda item: (-item[0], item[1]["name"]))
+    return [item[1] for item in ranked_matches[:limit]]
 
 
 def get_ist_timestamp() -> str:
@@ -213,7 +303,10 @@ def confidence_from_score(score: int) -> int:
 
 
 def analyze_stock(symbol: str) -> Dict:
-    normalized_symbol = fix_symbol(symbol)
+    resolved_stock = resolve_stock_query(symbol)
+    display_symbol = resolved_stock["symbol"]
+    company_name = resolved_stock["name"]
+    normalized_symbol = fix_symbol(display_symbol)
     current_time = get_ist_timestamp()
 
     try:
@@ -221,7 +314,8 @@ def analyze_stock(symbol: str) -> Dict:
         if df.empty:
             return {
                 "stock": normalized_symbol,
-                "company_symbol": symbol.upper().replace(".NS", ""),
+                "company_symbol": display_symbol,
+                "company_name": company_name,
                 "signal": "NO DATA",
                 "trend": "Unavailable",
                 "confidence": 0,
@@ -265,13 +359,14 @@ def analyze_stock(symbol: str) -> Dict:
         stop_loss = round(current_price * 0.98, 2) if score >= 0 else round(current_price * 1.02, 2)
 
         summary = (
-            f"{symbol.upper().replace('.NS', '')} looks {trend.lower()} with a "
+            f"{display_symbol} looks {trend.lower()} with a "
             f"{signal.lower()} bias based on moving averages, momentum, RSI, and recent price action."
         )
 
         return {
             "stock": normalized_symbol,
-            "company_symbol": symbol.upper().replace(".NS", ""),
+            "company_symbol": display_symbol,
+            "company_name": company_name,
             "signal": signal,
             "trend": trend,
             "confidence": confidence,
@@ -292,7 +387,8 @@ def analyze_stock(symbol: str) -> Dict:
     except Exception as exc:
         return {
             "stock": normalized_symbol,
-            "company_symbol": symbol.upper().replace(".NS", ""),
+            "company_symbol": display_symbol,
+            "company_name": company_name,
             "signal": "ERROR",
             "trend": "Unavailable",
             "confidence": 0,
@@ -312,7 +408,10 @@ def analyze_stock(symbol: str) -> Dict:
 
 
 def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") -> Dict:
-    normalized_symbol = fix_symbol(symbol)
+    resolved_stock = resolve_stock_query(symbol)
+    display_symbol = resolved_stock["symbol"]
+    company_name = resolved_stock["name"]
+    normalized_symbol = fix_symbol(display_symbol)
     current_time = get_ist_timestamp()
 
     try:
@@ -324,7 +423,8 @@ def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") ->
         if df.empty:
             return {
                 "stock": normalized_symbol,
-                "company_symbol": symbol.upper().replace(".NS", ""),
+                "company_symbol": display_symbol,
+                "company_name": company_name,
                 "generated_at_ist": current_time,
                 "points": [],
                 "error": "No recent data was returned for this symbol.",
@@ -346,7 +446,8 @@ def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") ->
 
         return {
             "stock": normalized_symbol,
-            "company_symbol": symbol.upper().replace(".NS", ""),
+            "company_symbol": display_symbol,
+            "company_name": company_name,
             "generated_at_ist": current_time,
             "points": points,
             "error": None,
@@ -354,7 +455,8 @@ def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") ->
     except Exception as exc:
         return {
             "stock": normalized_symbol,
-            "company_symbol": symbol.upper().replace(".NS", ""),
+            "company_symbol": display_symbol,
+            "company_name": company_name,
             "generated_at_ist": current_time,
             "points": [],
             "error": str(exc),
@@ -385,7 +487,9 @@ def classify_sentiment(score: int) -> str:
 
 
 def get_stock_news(symbol: str) -> Dict:
-    clean_symbol = symbol.upper().replace(".NS", "")
+    resolved_stock = resolve_stock_query(symbol)
+    clean_symbol = resolved_stock["symbol"]
+    company_name = resolved_stock["name"]
     current_time = get_ist_timestamp()
     query = quote_plus(f"{clean_symbol} NSE stock")
     rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
@@ -421,6 +525,7 @@ def get_stock_news(symbol: str) -> Dict:
 
         return {
             "stock": clean_symbol,
+            "company_name": company_name,
             "generated_at_ist": current_time,
             "overall_sentiment": overall,
             "sentiment_score": sentiment_total,
@@ -430,6 +535,7 @@ def get_stock_news(symbol: str) -> Dict:
     except Exception as exc:
         return {
             "stock": clean_symbol,
+            "company_name": company_name,
             "generated_at_ist": current_time,
             "overall_sentiment": "Unavailable",
             "sentiment_score": 0,
@@ -469,6 +575,15 @@ def history(
 @app.get("/news")
 def news(symbol: str = Query(..., description="NSE stock symbol like RELIANCE or TCS")):
     return get_stock_news(symbol)
+
+
+@app.get("/search-stocks")
+def search_stocks(q: str = Query("", description="Stock name or ticker query")):
+    results = search_stock_catalog(q)
+    return {
+        "query": q,
+        "results": results,
+    }
 
 
 @app.get("/market-overview")

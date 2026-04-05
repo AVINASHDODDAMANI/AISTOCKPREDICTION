@@ -22,9 +22,12 @@
 
         <div class="search-panel">
           <label for="symbol" class="input-label">Enter NSE symbol</label>
-          <div class="search-row">
-            <input type="text" id="symbol" placeholder="RELIANCE, TCS, INFY, SBIN" />
-            <button id="analyzeBtn">Analyze Stock</button>
+          <div class="search-box">
+            <div class="search-row">
+              <input type="text" id="symbol" placeholder="RELIANCE, TCS, INFY, SBIN" />
+              <button id="analyzeBtn">Analyze Stock</button>
+            </div>
+            <div id="searchSuggestions" class="search-suggestions"></div>
           </div>
           <div class="chip-row">
             <button class="chip" data-symbol="RELIANCE">RELIANCE</button>
