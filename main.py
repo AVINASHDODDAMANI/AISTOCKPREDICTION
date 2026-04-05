@@ -1144,3 +1144,79 @@ async def api_watchlist_delete(symbol: str, authorization: Optional[str] = Heade
     user, _ = require_authenticated_user(authorization)
     updated = remove_user_watchlist_symbol(int(user["id"]), symbol)
     return {"symbols": updated}
+
+
+@app.get("/api/portfolio/stats")
+async def api_portfolio_stats(authorization: Optional[str] = Header(default=None)):
+    """Get portfolio statistics and performance metrics"""
+    token = parse_bearer_token(authorization)
+    user = get_user_from_token(token) if token else None
+    if not user:
+        raise HTTPException(status_code=401, detail="Authentication required for portfolio stats")
+    
+    symbols = read_user_watchlist(int(user["id"]))
+    
+    if not symbols:
+        return {
+            "totalStocks": 0,
+            "bullishCount": 0,
+            "bearishCount": 0,
+            "neutralCount": 0,
+            "averageConfidence": 0,
+            "generatedAt": get_ist_timestamp(),
+        }
+    
+    stats = await summarize_watchlist(symbols, "1d")
+    
+    bullish = sum(1 for s in stats if "BUY" in s.get("signal", "").upper())
+    bearish = sum(1 for s in stats if "SELL" in s.get("signal", "").upper())
+    neutral = len(stats) - bullish - bearish
+    
+    confidences = [s.get("confidence", 0) for s in stats if isinstance(s.get("confidence"), (int, float))]
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 0
+    
+    return {
+        "totalStocks": len(stats),
+        "bullishCount": bullish,
+        "bearishCount": bearish,
+        "neutralCount": neutral,
+        "averageConfidence": round(avg_confidence, 2),
+        "generatedAt": get_ist_timestamp(),
+    }
+
+
+@app.get("/api/market/indexes")
+async def api_market_indexes(timeframe: str = Query("1d")):
+    """Get major index data for market overview"""
+    indexes = ["NIFTY", "BANKNIFTY", "SENSEX"]
+    results = await summarize_watchlist(indexes, timeframe)
+    return {
+        "timeframe": timeframe,
+        "indexes": results,
+        "generatedAt": get_ist_timestamp(),
+    }
+
+
+@app.get("/api/market/top-movers")
+async def api_market_top_movers(timeframe: str = Query("1d"), limit: int = Query(5, ge=1, le=20)):
+    """Get top performing stocks"""
+    # Get a sample of popular stocks
+    sample_stocks = ["RELIANCE", "TCS", "INFY", "HDFC", "ITC", "MARUTI", "WIPRO", "AXISBANK", "LT", "BAJAJFINSV"]
+    
+    results = await summarize_watchlist(sample_stocks[:limit + 5], timeframe)
+    
+    # Sort by confidence and signal strength
+    sorted_results = sorted(
+        results,
+        key=lambda x: (
+            1 if "BUY" in x.get("signal", "").upper() else 0,
+            x.get("confidence", 0)
+        ),
+        reverse=True
+    )
+    
+    return {
+        "timeframe": timeframe,
+        "topMovers": sorted_results[:limit],
+        "generatedAt": get_ist_timestamp(),
+    }

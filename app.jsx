@@ -22,6 +22,7 @@ const TIMEFRAME_OPTIONS = [
   { value: "1d", label: "1D" },
 ];
 
+// Utility functions
 function formatCurrency(value) {
   if (value === null || value === undefined) return "--";
   return `Rs ${Number(value).toFixed(2)}`;
@@ -53,6 +54,7 @@ async function fetchJson(url, options) {
   return response.json();
 }
 
+// Chart component for candlestick and indicators
 function CandlestickChart({ chart }) {
   const hostRef = useRef(null);
 
@@ -115,15 +117,283 @@ function CandlestickChart({ chart }) {
   return <div className="tv-chart" ref={hostRef} />;
 }
 
-function MetricCard({ label, value, tone }) {
+// Indicator Chart Component
+function IndicatorChart({ indicators, label, type = "bar" }) {
+  const canvasRef = useRef(null);
+  const chartRef = useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || !indicators || !window.Chart) return;
+
+    if (chartRef.current) {
+      chartRef.current.destroy();
+    }
+
+    const ctx = canvasRef.current.getContext("2d");
+    const data = indicators.map(item => item.value);
+    const labels = indicators.map((_, i) => `${i}`);
+
+    chartRef.current = new window.Chart(ctx, {
+      type: type,
+      data: {
+        labels: labels,
+        datasets: [{
+          label: label,
+          data: data,
+          backgroundColor: data.map(v => v > 0 ? "rgba(33, 193, 122, 0.6)" : "rgba(255, 117, 117, 0.6)"),
+          borderColor: data.map(v => v > 0 ? "#21c17a" : "#ff7575"),
+          borderWidth: 1,
+          tension: 0.4,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: {
+          legend: {
+            labels: { color: "#c7d6ea", font: { size: 12 } },
+            display: true,
+          }
+        },
+        scales: {
+          y: {
+            ticks: { color: "#9db2cf", font: { size: 12 } },
+            grid: { color: "rgba(255, 255, 255, 0.05)" },
+          },
+          x: {
+            ticks: { color: "#9db2cf", font: { size: 10 } },
+            grid: { color: "rgba(255, 255, 255, 0.05)" },
+          },
+        }
+      }
+    });
+
+    return () => {
+      if (chartRef.current) chartRef.current.destroy();
+    };
+  }, [indicators, label, type]);
+
+  return <canvas ref={canvasRef} height="150" />;
+}
+
+// Metric Card component
+function MetricCard({ label, value, tone, icon }) {
   return (
     <article className={`metric-card ${tone ? `metric-${tone}` : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+      {icon && <i className={icon}></i>}
+      <div>
+        <span className="metric-label">{label}</span>
+        <strong className="metric-value">{value}</strong>
+      </div>
     </article>
   );
 }
 
+// News Item Component
+function NewsItem({ item }) {
+  const tone = signalTone(item.sentiment || "");
+  return (
+    <div className={`news-item news-${tone}`}>
+      <strong>{item.headline}</strong>
+      <small>{item.date}</small>
+      <p>{item.summary}</p>
+    </div>
+  );
+}
+
+// Main Dashboard Component
+function Dashboard({ dashboard, loading, selectedTimeframe }) {
+  const [activeTab, setActiveTab] = useState("overview");
+
+  if (loading) {
+    return <div className="loading-state"><span className="spinner"></span> Loading analysis...</div>;
+  }
+
+  if (!dashboard) {
+    return <div className="loading-state">Select a stock to begin</div>;
+  }
+
+  const indicators = dashboard.indicators || {};
+  const multiTimeframe = dashboard.multiTimeframe || [];
+  const news = dashboard.news || {};
+
+  return (
+    <div className="dashboard-content">
+      <div className="dashboard-header">
+        <div className="header-top">
+          <div className="header-left">
+            <h2>{dashboard.name} ({dashboard.symbol})</h2>
+            <span className={`signal-badge ${signalTone(dashboard.signal)}`}>{dashboard.signal}</span>
+            <span className="confidence-badge">Confidence: {dashboard.confidence}%</span>
+          </div>
+          <div className="header-price">
+            <div className="price-large">{formatCurrency(dashboard.price)}</div>
+            <div className="price-info">Generated: {dashboard.generatedAtIST}</div>
+          </div>
+        </div>
+
+        <div className="tab-controls">
+          {["overview", "indicators", "news", "timing"].map(tab => (
+            <button
+              key={tab}
+              className={`tab-button ${activeTab === tab ? "active" : ""}`}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab.charAt(0).toUpperCase() + tab.slice(1)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {activeTab === "overview" && (
+        <div className="tab-content">
+          <section className="chart-section">
+            <h3>Price Action & Bollinger Bands</h3>
+            <CandlestickChart chart={dashboard.chart} />
+          </section>
+
+          <section className="metrics-section">
+            <div className="metrics-row">
+              <MetricCard label="Trend" value={dashboard.trend} tone={signalTone(dashboard.signal)} icon="fas fa-arrow-trend-up" />
+              <MetricCard label="Entry Price" value={formatCurrency(dashboard.entry)} tone="neutral" icon="fas fa-sign-in-alt" />
+              <MetricCard label="Target Price" value={formatCurrency(dashboard.target)} tone="bull" icon="fas fa-bullseye" />
+              <MetricCard label="Stop Loss" value={formatCurrency(dashboard.stopLoss)} tone="bear" icon="fas fa-flag-checkered" />
+            </div>
+          </section>
+
+          <section className="reasons-section">
+            <h3>Trading Reasons</h3>
+            <ul className="reasons-list">
+              {dashboard.reasons && dashboard.reasons.map((reason, i) => (
+                <li key={i}><i className="fas fa-check-circle"></i>{reason}</li>
+              ))}
+            </ul>
+          </section>
+
+          {dashboard.dynamicExplanation && (
+            <section className="explanation-section">
+              <h3>Analysis Summary</h3>
+              <p>{dashboard.dynamicExplanation}</p>
+            </section>
+          )}
+        </div>
+      )}
+
+      {activeTab === "indicators" && (
+        <div className="tab-content">
+          <div className="indicators-grid">
+            <section className="indicator-card">
+              <h4>RSI (14)</h4>
+              <div className="indicator-value">{indicators.rsi}</div>
+              <p className="indicator-desc">
+                {indicators.rsi > 70 ? "Overbought - potential pullback" : 
+                 indicators.rsi < 30 ? "Oversold - potential bounce" : 
+                 "Healthy momentum range"}
+              </p>
+            </section>
+
+            <section className="indicator-card">
+              <h4>MACD</h4>
+              <div className="indicator-value">{indicators.macd?.toFixed(4)}</div>
+              <div className="indicator-signal">Signal: {indicators.macdSignal?.toFixed(4)}</div>
+              <p className="indicator-desc">
+                {indicators.macd > indicators.macdSignal ? "Bullish crossover" : "Bearish crossover"}
+              </p>
+            </section>
+
+            <section className="indicator-card">
+              <h4>Volatility (14)</h4>
+              <div className="indicator-value">{indicators.volatility?.toFixed(2)}%</div>
+              <p className="indicator-desc">
+                {indicators.volatility > 3 ? "High volatility" : indicators.volatility > 1 ? "Moderate volatility" : "Low volatility"}
+              </p>
+            </section>
+
+            <section className="indicator-card">
+              <h4>Momentum</h4>
+              <div className="indicator-value">{indicators.momentum?.toFixed(2)}%</div>
+              <p className="indicator-desc">
+                {indicators.momentum > 0.02 ? "Positive momentum" : indicators.momentum < -0.02 ? "Negative momentum" : "Neutral momentum"}
+              </p>
+            </section>
+          </div>
+
+          <section className="bollinger-section">
+            <h3>Bollinger Bands</h3>
+            <div className="bollinger-info">
+              <div className="bb-item">
+                <span>Upper Band</span>
+                <strong>{formatCurrency(indicators.bollingerUpper)}</strong>
+              </div>
+              <div className="bb-item">
+                <span>Middle Band</span>
+                <strong>{formatCurrency(indicators.bollingerMiddle)}</strong>
+              </div>
+              <div className="bb-item">
+                <span>Lower Band</span>
+                <strong>{formatCurrency(indicators.bollingerLower)}</strong>
+              </div>
+              <div className="bb-item">
+                <span>Current Price</span>
+                <strong>{formatCurrency(dashboard.price)}</strong>
+              </div>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {activeTab === "news" && (
+        <div className="tab-content">
+          <section className="news-section">
+            <h3>Market Sentiment</h3>
+            <div className="sentiment-summary">
+              <div className={`sentiment-item sentiment-bull`}>
+                <strong>Overall</strong>
+                <span>{news.overall || "Neutral"}</span>
+              </div>
+              <div className={`sentiment-item sentiment-bull`}>
+                <strong>Bullish Articles</strong>
+                <span>{news.bullishCount || 0}</span>
+              </div>
+              <div className={`sentiment-item sentiment-bear`}>
+                <strong>Bearish Articles</strong>
+                <span>{news.bearishCount || 0}</span>
+              </div>
+            </div>
+
+            {news.headlines && news.headlines.length > 0 && (
+              <div className="news-list">
+                {news.headlines.slice(0, 5).map((item, i) => (
+                  <NewsItem key={i} item={item} />
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+
+      {activeTab === "timing" && (
+        <div className="tab-content">
+          <section className="timing-section">
+            <h3>Multi-Timeframe Analysis</h3>
+            <div className="timing-views">
+              {multiTimeframe.map((view, i) => (
+                <div key={i} className={`timing-card timing-${signalTone(view.signal)}`}>
+                  <h4>{view.timeframe}</h4>
+                  <div className="timing-signal">{view.signal}</div>
+                  <div className="timing-confidence">Confidence: {view.confidence}%</div>
+                  <p>{view.summary}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Main App Component
 function App() {
   const [meta, setMeta] = useState({ sectors: [], watchlist: [] });
   const [query, setQuery] = useState("RELIANCE");
@@ -146,6 +416,7 @@ function App() {
   const [authToken, setAuthToken] = useState(localStorage.getItem("authToken") || "");
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
+  const [activeView, setActiveView] = useState("dashboard");
 
   useEffect(() => {
     async function boot() {
@@ -347,334 +618,256 @@ function App() {
 
   return (
     <div className="app-shell">
-      <header className="hero-shell">
-        <div className="hero-copy">
-          <p className="eyebrow">AI Stock Trading Dashboard</p>
-          <h1>Trade-ready stock analysis with indicators, signals, and multi-timeframe context.</h1>
-          <p className="hero-text">
-            Analyze Indian stocks with candlestick charts, RSI, MACD, Bollinger Bands, AI signals,
-            dynamic explanations, saved watchlists, and side-by-side comparison.
-          </p>
-          <div className="preview-banner">
-            <strong>Preview first.</strong>
-            <span>You can explore the dashboard without logging in. Create an account only when you want saved watchlists and deeper personalized usage.</span>
-          </div>
-
-          <div className="hero-controls">
-            <div className="search-stack">
-              <div className="search-row">
-                <input
-                  value={query}
-                  onChange={(event) => {
-                    setQuery(event.target.value);
-                    setSearchOpen(true);
-                  }}
-                  onFocus={() => {
-                    if (heroSuggestions.length) setSearchOpen(true);
-                  }}
-                  placeholder="Search stock, index, or ticker"
-                />
-                <button onClick={() => submitDashboard(query)}>Analyze</button>
-              </div>
-              {searchOpen && heroSuggestions.length > 0 && (
-                <div className="search-dropdown" onMouseDown={(event) => event.preventDefault()}>
-                  {heroSuggestions.map((item) => (
-                    <button
-                      key={`${item.symbol}-${item.name}`}
-                      className="search-result"
-                      onClick={() => {
-                        setQuery(item.name || item.symbol);
-                        submitDashboard(item.symbol);
-                      }}
-                    >
-                      <span>
-                        <strong>{item.name}</strong>
-                        <small>{item.sector || item.instrument_type}</small>
-                      </span>
-                      <span>{item.symbol}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="timeframe-tabs">
-              {TIMEFRAME_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  className={selectedTimeframe === option.value ? "active-tab" : ""}
-                  onClick={() => handleTimeframeChange(option.value)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
+      {/* Navigation */}
+      <nav className="navbar">
+        <div className="navbar-brand">
+          <h1><i className="fas fa-chart-line"></i> AI Stock Dashboard</h1>
         </div>
-
-        <div className="hero-card">
-          <p className="card-label">Access</p>
-          <ul>
-            <li>Guest users can view live dashboard analysis</li>
-            <li>Registered users can save watchlists and personal usage data</li>
-            <li>Login works with phone number or email plus password</li>
-            <li>Google sign-in can be added later with OAuth credentials</li>
-          </ul>
-
-          <div className="auth-panel">
-            <p className="card-label">Register Or Login</p>
-            {currentUser ? (
-              <div className="auth-logged">
-                <strong>{currentUser.fullName}</strong>
-                <small>{currentUser.email || currentUser.phone}</small>
-                <button className="ghost-btn" onClick={logout}>Logout</button>
-              </div>
-            ) : (
-              <div className="auth-form">
-                <div className="auth-tabs">
-                  <button className={authMode === "login" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("login")}>Login</button>
-                    <button className={authMode === "register" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("register")}>Register</button>
-                </div>
-                <div className="auth-tabs">
-                  <button className={authMethod === "phone" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMethod("phone")}>Use Phone</button>
-                  <button className={authMethod === "email" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMethod("email")}>Use Email</button>
-                </div>
-                {authMode === "register" && (
-                  <input
-                    value={authForm.fullName}
-                    onChange={(event) => setAuthForm({ ...authForm, fullName: event.target.value })}
-                    placeholder="Full name"
-                  />
-                )}
-                {authMethod === "phone" ? (
-                  <input
-                    value={authForm.phone}
-                    onChange={(event) => setAuthForm({ ...authForm, phone: event.target.value })}
-                    placeholder="Phone number"
-                  />
-                ) : (
-                  <input
-                    value={authForm.email}
-                    onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
-                    placeholder="Email address"
-                  />
-                )}
-                <input
-                  type="password"
-                  value={authForm.password}
-                  onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
-                  placeholder="Password"
-                />
-                <button onClick={() => submitAuth(authMode)} disabled={authLoading}>
-                  {authLoading ? "Please wait..." : authMode === "register" ? "Create Account" : "Login"}
-                </button>
-              </div>
-            )}
-          </div>
+        <div className="navbar-menu">
+          <button className={`nav-item ${activeView === "dashboard" ? "active" : ""}`} onClick={() => setActiveView("dashboard")}>
+            <i className="fas fa-chart-pie"></i> Dashboard
+          </button>
+          <button className={`nav-item ${activeView === "watchlist" ? "active" : ""}`} onClick={() => setActiveView("watchlist")}>
+            <i className="fas fa-star"></i> Watchlist
+          </button>
+          <button className={`nav-item ${activeView === "compare" ? "active" : ""}`} onClick={() => setActiveView("compare")}>
+            <i className="fas fa-exchange-alt"></i> Compare
+          </button>
         </div>
-      </header>
-
-      {error && <div className="error-banner">{error}</div>}
-
-      <main className="dashboard-grid">
-        <section className="panel main-panel">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Main Analysis</p>
-              <h2>{dashboard ? `${dashboard.name} (${dashboard.symbol})` : "Waiting for analysis"}</h2>
+        <div className="navbar-auth">
+          {currentUser ? (
+            <div className="user-menu">
+              <span className="user-name">{currentUser.fullName}</span>
+              <button className="logout-btn" onClick={logout}>Logout</button>
             </div>
-            <span className={`signal-pill ${signalTone(dashboard && dashboard.signal)}`}>
-              {dashboard ? dashboard.signal : "NO SIGNAL"}
-            </span>
-          </div>
-
-          {loading && <div className="loading-strip">Loading market data, indicators, and explanations...</div>}
-          {loading && <div className="spinner-row"><span className="spinner" /> <span>Fetching fresh market data...</span></div>}
-
-          <div className="metrics-grid">
-            <MetricCard label="Current Price" value={dashboard ? formatCurrency(dashboard.price) : "--"} />
-            <MetricCard label="Confidence" value={dashboard ? `${dashboard.confidence}%` : "--"} />
-            <MetricCard label="Trend" value={dashboard ? dashboard.trend : "--"} tone={signalTone(dashboard && dashboard.signal)} />
-            <MetricCard label="Entry" value={dashboard ? formatCurrency(dashboard.entry) : "--"} />
-            <MetricCard label="Target" value={dashboard ? formatCurrency(dashboard.target) : "--"} />
-            <MetricCard label="Stop Loss" value={dashboard ? formatCurrency(dashboard.stopLoss) : "--"} />
-          </div>
-
-          <div className="chart-card">
-            <div className="chart-header">
-              <div>
-                <h3>Candlestick Chart</h3>
-                <p>{dashboard ? `${dashboard.timeframeLabel} candlesticks with Bollinger Bands` : "Load a symbol to render the chart"}</p>
-              </div>
-            </div>
-            {dashboard && dashboard.chart ? <CandlestickChart chart={dashboard.chart} /> : <div className="chart-placeholder">No chart yet.</div>}
-          </div>
-
-          <div className="indicator-grid">
-            <MetricCard label="RSI" value={dashboard ? dashboard.indicators.rsi : "--"} />
-            <MetricCard label="MACD" value={dashboard ? dashboard.indicators.macd : "--"} />
-            <MetricCard label="MACD Signal" value={dashboard ? dashboard.indicators.macdSignal : "--"} />
-            <MetricCard label="BB Upper" value={dashboard ? formatCurrency(dashboard.indicators.bollingerUpper) : "--"} />
-            <MetricCard label="BB Mid" value={dashboard ? formatCurrency(dashboard.indicators.bollingerMiddle) : "--"} />
-            <MetricCard label="BB Lower" value={dashboard ? formatCurrency(dashboard.indicators.bollingerLower) : "--"} />
-          </div>
-
-          <div className="explanation-card">
-            <h3>AI Explanation</h3>
-            <p>{dashboard && dashboard.dynamicExplanation ? dashboard.dynamicExplanation.summary : "No explanation available yet."}</p>
-            <ul>
-              {dashboard && dashboard.dynamicExplanation
-                ? dashboard.dynamicExplanation.bullets.map((item) => <li key={item}>{item}</li>)
-                : <li>Run an analysis to generate the market explanation.</li>}
-            </ul>
-          </div>
-
-          <div className="timeframe-grid">
-            {dashboard && dashboard.multiTimeframe && dashboard.multiTimeframe.length > 0 ? (
-              dashboard.multiTimeframe.map((item) => (
-                <article key={item.timeframe} className="mini-panel">
-                  <span>{item.timeframe.toUpperCase()}</span>
-                  <strong className={`${signalTone(item.signal)}-text`}>{item.signal}</strong>
-                  <p>{item.summary}</p>
-                  <small>{item.confidence}% confidence</small>
-                </article>
-              ))
-            ) : (
-              <div className="mini-panel">Multi-timeframe analysis will appear here.</div>
-            )}
-          </div>
-        </section>
-
-        <section className="panel side-panel">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Watchlist</p>
-              <h2>Saved Signals</h2>
-            </div>
-          </div>
-
-          {!currentUser && (
-            <div className="lock-banner">
-              <strong>Login required for saved data</strong>
-              <span>Guests can explore analysis, but watchlist saving is enabled after login or registration.</span>
-            </div>
-          )}
-
-          <div className="inline-form">
-            <input
-              value={watchlistInput}
-              onChange={(event) => setWatchlistInput(event.target.value)}
-              placeholder="Add symbol like INFY"
-            />
-            <button onClick={addToWatchlist}>Save</button>
-          </div>
-
-          {watchlistLoading ? (
-            <div className="loading-strip">Refreshing watchlist...</div>
           ) : (
-            <div className="watchlist-stack">
-              {watchlist.map((item) => (
-                <article key={item.symbol} className="watch-item">
-                  <button className="watch-main" onClick={() => submitDashboard(item.symbol)}>
-                    <strong>{item.name || item.symbol}</strong>
-                    <span>{item.signal}</span>
-                    <small>{item.symbol} · {formatCurrency(item.price)} · {item.confidence}%</small>
+            <button className="login-btn" onClick={() => setActiveView("auth")}>Login / Register</button>
+          )}
+        </div>
+      </nav>
+
+      {/* Error Banner */}
+      {error && <div className="error-banner"><i className="fas fa-exclamation-circle"></i> {error}</div>}
+
+      {/* Main Content */}
+      <div className="app-content">
+        {activeView === "dashboard" && (
+          <div className="view-container">
+            <div className="search-hero">
+              <div className="search-stack">
+                <div className="search-input-group">
+                  <i className="fas fa-search"></i>
+                  <input
+                    value={query}
+                    onChange={(event) => {
+                      setQuery(event.target.value);
+                      setSearchOpen(true);
+                    }}
+                    onFocus={() => {
+                      if (heroSuggestions.length) setSearchOpen(true);
+                    }}
+                    placeholder="Search stock, index, or ticker..."
+                  />
+                  <button onClick={() => submitDashboard(query)}>Analyze</button>
+                </div>
+                
+                {searchOpen && heroSuggestions.length > 0 && (
+                  <div className="search-dropdown" onMouseDown={(event) => event.preventDefault()}>
+                    {heroSuggestions.map((item) => (
+                      <button
+                        key={`${item.symbol}-${item.name}`}
+                        className="search-result"
+                        onClick={() => {
+                          setQuery(item.name || item.symbol);
+                          submitDashboard(item.symbol);
+                        }}
+                      >
+                        <span>
+                          <strong>{item.name}</strong>
+                          <small>{item.sector || item.instrument_type}</small>
+                        </span>
+                        <span>{item.symbol}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="timeframe-selector">
+                {TIMEFRAME_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    className={`timeframe-btn ${selectedTimeframe === option.value ? "active" : ""}`}
+                    onClick={() => handleTimeframeChange(option.value)}
+                  >
+                    {option.label}
                   </button>
-                  <button className="ghost-btn" onClick={() => removeFromWatchlist(item.symbol)}>Remove</button>
-                </article>
-              ))}
+                ))}
+              </div>
             </div>
-          )}
 
-          <div className="news-block">
-            <h3>News Sentiment</h3>
-            <div className={`signal-pill ${signalTone(dashboard && dashboard.news && dashboard.news.overall)}`}>
-              {dashboard && dashboard.news ? dashboard.news.overall : "Neutral"}
+            <Dashboard dashboard={dashboard} loading={loading} selectedTimeframe={selectedTimeframe} />
+          </div>
+        )}
+
+        {activeView === "watchlist" && (
+          <div className="view-container">
+            <div className="watchlist-header">
+              <h2><i className="fas fa-star"></i> My Watchlist</h2>
+              {authToken && (
+                <div className="watchlist-add">
+                  <input
+                    value={watchlistInput}
+                    onChange={(event) => setWatchlistInput(event.target.value)}
+                    onKeyPress={(event) => {
+                      if (event.key === "Enter") addToWatchlist();
+                    }}
+                    placeholder="Add stock to watchlist..."
+                  />
+                  <button onClick={addToWatchlist}>Add</button>
+                </div>
+              )}
             </div>
-            <div className="news-list">
-              {dashboard && dashboard.news && dashboard.news.articles && dashboard.news.articles.length > 0 ? (
-                dashboard.news.articles.map((article) => (
-                  <a key={`${article.link}-${article.title}`} href={article.link} target="_blank" rel="noreferrer" className="news-item">
-                    <strong>{article.title}</strong>
-                    <small>{article.sentiment}</small>
-                  </a>
-                ))
+
+            {watchlistLoading ? (
+              <div className="loading-state"><span className="spinner"></span> Loading watchlist...</div>
+            ) : watchlist.length === 0 ? (
+              <div className="empty-state">
+                <i className="fas fa-inbox"></i>
+                <p>{authToken ? "Your watchlist is empty. Add stocks to get started!" : "Login to save your watchlist"}</p>
+              </div>
+            ) : (
+              <div className="watchlist-grid">
+                {watchlist.map((item) => (
+                  <div key={item.symbol} className={`watchlist-card watchlist-${signalTone(item.signal)}`}>
+                    <div className="card-header">
+                      <div>
+                        <h4>{item.name}</h4>
+                        <span className="symbol">{item.symbol}</span>
+                      </div>
+                      <button className="remove-btn" onClick={() => removeFromWatchlist(item.symbol)}>
+                        <i className="fas fa-times"></i>
+                      </button>
+                    </div>
+                    <div className="card-price">{formatCurrency(item.price)}</div>
+                    <div className="card-signal">{item.signal}</div>
+                    <div className="card-confidence">Confidence: {item.confidence}%</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeView === "compare" && (
+          <div className="view-container">
+            <div className="compare-header">
+              <h2><i className="fas fa-exchange-alt"></i> Compare Stocks</h2>
+              <div className="compare-inputs">
+                {compareInputs.map((symbol, i) => (
+                  <input
+                    key={i}
+                    value={symbol}
+                    onChange={(event) => {
+                      const updated = [...compareInputs];
+                      updated[i] = event.target.value;
+                      setCompareInputs(updated);
+                    }}
+                    placeholder={`Stock ${i + 1}`}
+                  />
+                ))}
+                <button onClick={compareNow} disabled={compareLoading}>
+                  {compareLoading ? "Comparing..." : "Compare"}
+                </button>
+              </div>
+            </div>
+
+            {compareResults.length > 0 && (
+              <div className="compare-grid">
+                {compareResults.map((result) => (
+                  <div key={result.symbol} className={`compare-card compare-${signalTone(result.signal)}`}>
+                    <h3>{result.name} ({result.symbol})</h3>
+                    <div className="compare-price">{formatCurrency(result.price)}</div>
+                    <div className="compare-signal">{result.signal}</div>
+                    <div className="compare-metrics">
+                      <div><span>Confidence:</span> <strong>{result.confidence}%</strong></div>
+                      <div><span>Trend:</span> <strong>{result.trend}</strong></div>
+                      <div><span>Entry:</span> <strong>{formatCurrency(result.entry)}</strong></div>
+                      <div><span>Target:</span> <strong>{formatCurrency(result.target)}</strong></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeView === "auth" && (
+          <div className="view-container">
+            <div className="auth-panel-full">
+              <h2>Account</h2>
+              {currentUser ? (
+                <div className="auth-logged">
+                  <p>Logged in as <strong>{currentUser.fullName}</strong></p>
+                  <p>{currentUser.email || currentUser.phone}</p>
+                  <button onClick={logout} className="logout-btn-full">Logout</button>
+                </div>
               ) : (
-                <div className="news-item">No recent headlines available.</div>
+                <div className="auth-form-full">
+                  <div className="auth-mode-tabs">
+                    <button className={authMode === "login" ? "active" : ""} onClick={() => setAuthMode("login")}>Login</button>
+                    <button className={authMode === "register" ? "active" : ""} onClick={() => setAuthMode("register")}>Register</button>
+                  </div>
+
+                  {authMode === "register" && (
+                    <input
+                      value={authForm.fullName}
+                      onChange={(event) => setAuthForm({ ...authForm, fullName: event.target.value })}
+                      placeholder="Full Name"
+                    />
+                  )}
+
+                  <div className="auth-method-tabs">
+                    <button className={authMethod === "phone" ? "active" : ""} onClick={() => setAuthMethod("phone")}>Phone</button>
+                    <button className={authMethod === "email" ? "active" : ""} onClick={() => setAuthMethod("email")}>Email</button>
+                  </div>
+
+                  {authMethod === "phone" ? (
+                    <input
+                      value={authForm.phone}
+                      onChange={(event) => setAuthForm({ ...authForm, phone: event.target.value })}
+                      placeholder="Phone Number"
+                    />
+                  ) : (
+                    <input
+                      value={authForm.email}
+                      onChange={(event) => setAuthForm({ ...authForm, email: event.target.value })}
+                      placeholder="Email Address"
+                    />
+                  )}
+
+                  <input
+                    type="password"
+                    value={authForm.password}
+                    onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
+                    placeholder="Password"
+                  />
+
+                  <button
+                    onClick={() => submitAuth(authMode)}
+                    disabled={authLoading}
+                    className="auth-submit"
+                  >
+                    {authLoading ? "Processing..." : authMode === "register" ? "Create Account" : "Login"}
+                  </button>
+                </div>
               )}
             </div>
           </div>
-        </section>
-
-        <section className="panel compare-panel">
-          <div className="panel-head">
-            <div>
-              <p className="panel-kicker">Comparison</p>
-              <h2>Compare 2-3 Companies</h2>
-            </div>
-          </div>
-
-          <div className="compare-form">
-            {compareInputs.map((value, index) => (
-              <input
-                key={index}
-                value={value}
-                onChange={(event) => {
-                  const next = [...compareInputs];
-                  next[index] = event.target.value;
-                  setCompareInputs(next);
-                }}
-                placeholder={`Symbol ${index + 1}`}
-              />
-            ))}
-            {compareInputs.length < 3 && (
-              <button className="ghost-btn" onClick={() => setCompareInputs([...compareInputs, ""])}>
-                Add Third
-              </button>
-            )}
-            <button onClick={compareNow}>Compare</button>
-          </div>
-
-          {compareLoading ? (
-            <div className="loading-strip">Comparing symbols...</div>
-          ) : (
-            <div className="table-wrap">
-              <table className="compare-table">
-                <thead>
-                  <tr>
-                    <th>Symbol</th>
-                    <th>Price</th>
-                    <th>Signal</th>
-                    <th>Confidence</th>
-                    <th>Trend</th>
-                    <th>Entry</th>
-                    <th>Target</th>
-                    <th>Stop</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {compareResults.length > 0 ? compareResults.map((item) => (
-                    <tr key={item.symbol}>
-                      <td>{item.name || item.symbol}<br /><small>{item.symbol}</small></td>
-                      <td>{formatCurrency(item.price)}</td>
-                      <td className={`${signalTone(item.signal)}-text`}>{item.signal}</td>
-                      <td>{item.confidence}%</td>
-                      <td>{item.trend}</td>
-                      <td>{formatCurrency(item.entry)}</td>
-                      <td>{formatCurrency(item.target)}</td>
-                      <td>{formatCurrency(item.stopLoss)}</td>
-                    </tr>
-                  )) : (
-                    <tr><td colSpan="8">Comparison results will appear here.</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      </main>
+        )}
+      </div>
     </div>
   );
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.render(<App />, document.getElementById("root"));
