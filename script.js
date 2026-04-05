@@ -268,6 +268,11 @@ function renderChart(historyData) {
   const plotHeight = height - paddingY * 2;
   const candleSlot = plotWidth / Math.max(points.length, 1);
   const candleWidth = Math.max(4, Math.min(10, candleSlot * 0.55));
+  const labelIndexes = [
+    0,
+    Math.max(0, Math.floor(points.length / 2)),
+    Math.max(0, points.length - 1),
+  ];
 
   function scaleY(value) {
     return height - paddingY - ((value - min) / range) * plotHeight;
@@ -297,24 +302,99 @@ function renderChart(historyData) {
     })
     .join("");
 
+  const timeLabels = labelIndexes
+    .map((index) => {
+      const x = paddingX + index * candleSlot + candleSlot / 2;
+      const label = points[index] ? points[index].date : "";
+      return `
+        <text x="${x}" y="${height - 2}" text-anchor="middle" class="time-label">${label}</text>
+      `;
+    })
+    .join("");
+
+  const hoverPayload = escapeHtml(
+    JSON.stringify(
+      points.map((point, index) => ({
+        index,
+        x: paddingX + index * candleSlot + candleSlot / 2,
+        open: Number(point.open),
+        high: Number(point.high),
+        low: Number(point.low),
+        close: Number(point.close),
+        date: point.date,
+      }))
+    )
+  );
+
   const latestPrice = Number(points[points.length - 1].close);
   const firstPrice = Number(points[0].close);
   const latestDate = points[points.length - 1].date;
 
   elements.chartContainer.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" class="price-chart candlestick-chart" preserveAspectRatio="none" aria-label="Stock candlestick chart">
+    <div class="chart-interactive">
+    <svg viewBox="0 0 ${width} ${height}" class="price-chart candlestick-chart" preserveAspectRatio="none" aria-label="Stock candlestick chart" data-points="${hoverPayload}">
       <g class="chart-grid">
         <line x1="${paddingX}" y1="${paddingY}" x2="${paddingX}" y2="${height - paddingY}" class="grid-line"></line>
         <line x1="${paddingX}" y1="${height - paddingY}" x2="${width - paddingX}" y2="${height - paddingY}" class="grid-line"></line>
       </g>
       ${candleMarkup}
+      ${timeLabels}
+      <line x1="${paddingX}" y1="${paddingY}" x2="${paddingX}" y2="${height - paddingY}" class="hover-line" id="chartHoverLine"></line>
+      <rect x="${paddingX}" y="${paddingY}" width="${plotWidth}" height="${plotHeight}" class="chart-hitbox" id="chartHitbox"></rect>
     </svg>
+    <div class="chart-tooltip" id="chartTooltip">Move over a candle</div>
+    </div>
     <div class="chart-footer">
       <span>Start: ${formatCurrency(firstPrice)}</span>
       <span>Latest: ${formatCurrency(latestPrice)}</span>
       <span>${escapeHtml(latestDate)}</span>
     </div>
   `;
+
+  const svg = elements.chartContainer.querySelector(".candlestick-chart");
+  const hitbox = elements.chartContainer.querySelector("#chartHitbox");
+  const hoverLine = elements.chartContainer.querySelector("#chartHoverLine");
+  const tooltip = elements.chartContainer.querySelector("#chartTooltip");
+  const chartPoints = JSON.parse(svg.getAttribute("data-points") || "[]");
+
+  function updateHover(clientX) {
+    const bounds = svg.getBoundingClientRect();
+    const relativeX = ((clientX - bounds.left) / bounds.width) * width;
+    let nearest = chartPoints[0];
+
+    chartPoints.forEach((point) => {
+      if (Math.abs(point.x - relativeX) < Math.abs(nearest.x - relativeX)) {
+        nearest = point;
+      }
+    });
+
+    if (!nearest) return;
+
+    hoverLine.setAttribute("x1", nearest.x);
+    hoverLine.setAttribute("x2", nearest.x);
+    hoverLine.classList.add("visible");
+    tooltip.classList.add("visible");
+    tooltip.innerHTML = `
+      <strong>${escapeHtml(nearest.date)}</strong><br>
+      O: ${formatCurrency(nearest.open)}<br>
+      H: ${formatCurrency(nearest.high)}<br>
+      L: ${formatCurrency(nearest.low)}<br>
+      C: ${formatCurrency(nearest.close)}
+    `;
+  }
+
+  hitbox.addEventListener("mousemove", (event) => {
+    updateHover(event.clientX);
+  });
+
+  hitbox.addEventListener("mouseenter", (event) => {
+    updateHover(event.clientX);
+  });
+
+  hitbox.addEventListener("mouseleave", () => {
+    hoverLine.classList.remove("visible");
+    tooltip.classList.remove("visible");
+  });
 }
 
 async function loadChart(symbol) {

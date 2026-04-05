@@ -412,6 +412,10 @@ button:hover {
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
+.chart-interactive {
+  position: relative;
+}
+
 .chart-empty {
   min-height: 276px;
   display: grid;
@@ -429,6 +433,11 @@ button:hover {
 .grid-line {
   stroke: rgba(255, 255, 255, 0.1);
   stroke-width: 1;
+}
+
+.time-label {
+  fill: rgba(237, 244, 255, 0.6);
+  font-size: 10px;
 }
 
 .candle-wick {
@@ -450,6 +459,45 @@ button:hover {
 .candle.bear .candle-body {
   stroke: #ff7a7a;
   fill: rgba(255, 122, 122, 0.75);
+}
+
+.hover-line {
+  stroke: rgba(255, 255, 255, 0.6);
+  stroke-width: 1.2;
+  stroke-dasharray: 4 4;
+  opacity: 0;
+}
+
+.hover-line.visible {
+  opacity: 1;
+}
+
+.chart-hitbox {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.chart-tooltip {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-width: 140px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(5, 10, 18, 0.92);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+  line-height: 1.5;
+  font-size: 0.85rem;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 120ms ease, transform 120ms ease;
+  pointer-events: none;
+}
+
+.chart-tooltip.visible {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .chart-footer {
