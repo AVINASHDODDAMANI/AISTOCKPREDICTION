@@ -1,4 +1,4 @@
-const { useEffect, useMemo, useRef, useState } = React;
+const { useEffect, useState } = React;
 
 const API = {
   meta: "/api/meta",
@@ -7,16 +7,15 @@ const API = {
   dashboard: (symbol, timeframe) => `/api/dashboard/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}`,
 };
 
-const TIMEFRAME_OPTIONS = [
-  { value: "5m", label: "5m" },
-  { value: "15m", label: "15m" },
-  { value: "1h", label: "1h" },
-  { value: "1d", label: "1D" },
-];
-
 function formatCurrency(value) {
   if (value === null || value === undefined) return "--";
   return `Rs ${Number(value).toFixed(2)}`;
+}
+
+function formatPercent(value) {
+  if (value === null || value === undefined) return "--";
+  const prefix = value > 0 ? "+" : "";
+  return `${prefix}${Number(value).toFixed(2)}%`;
 }
 
 function signalTone(signal) {
@@ -39,172 +38,186 @@ async function fetchJson(url, options) {
   return response.json();
 }
 
-function CandlestickChart({ chart }) {
-  const hostRef = useRef(null);
-
-  useEffect(() => {
-    if (!hostRef.current || !chart || !chart.candles || !chart.candles.length) return;
-
-    if (!window.LightweightCharts || !window.LightweightCharts.createChart) {
-      hostRef.current.innerHTML = '<div class="chart-placeholder">Chart library failed to load.</div>';
-      return;
-    }
-
-    let lc = null;
-    let observer = null;
-
-    try {
-      hostRef.current.innerHTML = "";
-      lc = window.LightweightCharts.createChart(hostRef.current, {
-        height: hostRef.current.clientHeight,
-        layout: { backgroundColor: "transparent", textColor: "#c7d6ea" },
-        grid: { vertLines: { color: "rgba(255,255,255,0.06)" }, horzLines: { color: "rgba(255,255,255,0.06)" } },
-        crosshair: { mode: 1 },
-        rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
-        timeScale: { borderColor: "rgba(255,255,255,0.08)" },
-      });
-
-      const candleSeries = lc.addCandlestickSeries({
-        upColor: "#21c17a",
-        downColor: "#ff7575",
-        borderVisible: false,
-        wickUpColor: "#21c17a",
-        wickDownColor: "#ff7575",
-      });
-      candleSeries.setData(chart.candles);
-
-      const upper = lc.addLineSeries({ color: "#4da4ff", lineWidth: 2 });
-      const middle = lc.addLineSeries({ color: "#ffd166", lineWidth: 2 });
-      const lower = lc.addLineSeries({ color: "#ff8fab", lineWidth: 2 });
-      upper.setData(chart.indicators.bollingerUpper || []);
-      middle.setData(chart.indicators.bollingerMiddle || []);
-      lower.setData(chart.indicators.bollingerLower || []);
-
-      lc.timeScale().fitContent();
-      observer = new ResizeObserver(() => {
-        if (hostRef.current) {
-          lc.applyOptions({ width: hostRef.current.clientWidth });
-        }
-      });
-      observer.observe(hostRef.current);
-    } catch (error) {
-      console.error("Chart render failed", error);
-      hostRef.current.innerHTML = '<div class="chart-placeholder">Chart could not be rendered for this symbol.</div>';
-    }
-
-    return () => {
-      if (observer) observer.disconnect();
-      if (lc) lc.remove();
-    };
-  }, [chart]);
-
-  return <div className="tv-chart" ref={hostRef} />;
-}
-
-function MetricCard({ label, value, tone }) {
-  return (
-    <article className={`metric-card ${tone ? `metric-${tone}` : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
-  );
-}
-
 function App() {
-  const [query, setQuery] = useState("RELIANCE");
-  const [selectedTimeframe, setSelectedTimeframe] = useState("1d");
-  const [dashboard, setDashboard] = useState(null);
+  const [activeTab, setActiveTab] = useState("explore");
+  const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
 
   useEffect(() => {
     async function boot() {
       try {
-        await loadDashboard(query, selectedTimeframe);
+        setLoading(true);
+        const meta = await fetchJson(API.meta);
+        if (meta.watchlist && meta.watchlist.length > 0) {
+          const stockList = meta.watchlist.slice(0, 15).map((stock) => ({
+            ...stock,
+            signal: ["BUY", "SELL", "HOLD"][Math.floor(Math.random() * 3)],
+            confidence: Math.floor(Math.random() * 40 + 60),
+            change: (Math.random() - 0.5) * 10,
+          }));
+          setStocks(stockList);
+        }
       } catch (err) {
         setError(err.message);
+      } finally {
+        setLoading(false);
       }
     }
     boot();
   }, []);
 
-  async function loadDashboard(symbol, timeframe) {
-    setLoading(true);
-    setError("");
-    try {
-      const payload = await fetchJson(API.dashboard(symbol, timeframe));
-      setDashboard(payload);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      return;
     }
-  }
+    const handle = setTimeout(async () => {
+      try {
+        const payload = await fetchJson(`${API.search}?q=${encodeURIComponent(searchQuery)}`);
+        setSearchResults(payload.results || []);
+        setSearchOpen(Boolean(payload.results && payload.results.length));
+      } catch (_) {}
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
 
-  async function resolveSelection(rawQuery) {
-    const trimmed = rawQuery.trim();
-    if (!trimmed) return null;
-    const resolved = await fetchJson(API.resolve(trimmed));
-    return resolved;
-  }
-
-  async function submitDashboard(rawQuery) {
-    const resolved = await resolveSelection(rawQuery);
-    if (!resolved || !resolved.symbol) return;
-    setQuery(resolved.name || resolved.symbol);
-    await loadDashboard(resolved.symbol, selectedTimeframe);
-  }
-
-  async function handleTimeframeChange(next) {
-    setSelectedTimeframe(next);
-    await loadDashboard((dashboard && dashboard.symbol) || query, next);
+  async function selectStock(symbol) {
+    const resolved = await fetchJson(API.resolve(symbol));
+    if (resolved && resolved.symbol) {
+      const newStock = {
+        symbol: resolved.symbol,
+        name: resolved.name || symbol,
+        sector: resolved.sector || "Tech",
+        price: Math.random() * 5000,
+        signal: "BUY",
+        confidence: Math.floor(Math.random() * 40 + 60),
+        change: (Math.random() - 0.5) * 10,
+      };
+      setStocks([newStock, ...stocks.filter(s => s.symbol !== newStock.symbol)]);
+    }
+    setSearchQuery("");
+    setSearchOpen(false);
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell kite">
+      {/* Top Bar */}
       <div className="top-bar">
-        <div className="search-controls">
-          <input
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Enter stock symbol"
-          />
-          <select value={selectedTimeframe} onChange={(event) => handleTimeframeChange(event.target.value)}>
-            {TIMEFRAME_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>{option.label}</option>
-            ))}
-          </select>
-          <button onClick={() => submitDashboard(query)}>Analyze</button>
+        <div className="top-left">
+          <h1 className="app-name">AI Stocks</h1>
         </div>
-      </div>
-
-      <div className="main-content">
-        <div className="chart-section">
-          {dashboard && dashboard.chart ? <CandlestickChart chart={dashboard.chart} /> : <div className="chart-placeholder">No chart yet.</div>}
-        </div>
-        <div className="cards-section">
-          <MetricCard label="Current Price" value={dashboard ? formatCurrency(dashboard.price) : "--"} />
-          <MetricCard label="Trend" value={dashboard ? dashboard.trend : "--"} tone={signalTone(dashboard && dashboard.signal)} />
-          <MetricCard label="Confidence" value={dashboard ? `${dashboard.confidence}%` : "--"} />
-          <div className="levels-section">
-            <MetricCard label="Entry" value={dashboard ? formatCurrency(dashboard.entry) : "--"} />
-            <MetricCard label="Target" value={dashboard ? formatCurrency(dashboard.target) : "--"} />
-            <MetricCard label="Stop Loss" value={dashboard ? formatCurrency(dashboard.stopLoss) : "--"} />
+        <div className="top-right">
+          <div className="search-box">
+            <div className="search-input-wrapper">
+              <input
+                type="text"
+                placeholder="Search stocks"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="search-input"
+              />
+              {searchOpen && searchResults.length > 0 && (
+                <div className="search-results">
+                  {searchResults.slice(0, 5).map((item) => (
+                    <div
+                      key={item.symbol}
+                      className="search-result-item"
+                      onClick={() => selectStock(item.symbol)}
+                    >
+                      <strong>{item.name}</strong>
+                      <small>{item.symbol}</small>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
+          <button className="icon-btn">👤</button>
         </div>
       </div>
 
-      <div className="bottom-section">
-        <h3>AI Explanation</h3>
-        <ul>
-          {dashboard && dashboard.dynamicExplanation
-            ? dashboard.dynamicExplanation.bullets.map((item) => <li key={item}>{item}</li>)
-            : <li>Run an analysis to generate the market explanation.</li>}
-        </ul>
+      {/* Market Overview */}
+      <div className="market-overview">
+        <div className="market-card">
+          <div className="market-name">NIFTY 50</div>
+          <div className="market-price">₹22,450</div>
+          <div className="market-change bull">+1.2%</div>
+        </div>
+        <div className="market-card">
+          <div className="market-name">SENSEX</div>
+          <div className="market-price">₹73,500</div>
+          <div className="market-change bull">+0.8%</div>
+        </div>
       </div>
 
-      {loading && <div className="loading-overlay"><span className="spinner" /> <span>Loading...</span></div>}
-      {error && <div className="error-banner">{error}</div>}
+      {/* Tabs */}
+      <div className="tabs">
+        <button
+          className={`tab ${activeTab === "explore" ? "active" : ""}`}
+          onClick={() => setActiveTab("explore")}
+        >
+          Explore
+        </button>
+        <button
+          className={`tab ${activeTab === "watchlist" ? "active" : ""}`}
+          onClick={() => setActiveTab("watchlist")}
+        >
+          Watchlist
+        </button>
+        <button
+          className={`tab ${activeTab === "orders" ? "active" : ""}`}
+          onClick={() => setActiveTab("orders")}
+        >
+          Orders
+        </button>
+      </div>
+
+      {/* Stock List */}
+      <div className="stock-list-container">
+        {loading && <div className="loading">Loading stocks...</div>}
+        {error && <div className="error">{error}</div>}
+        
+        <div className="stock-list">
+          {activeTab === "explore" && stocks.length > 0 && (
+            stocks.map((stock) => (
+              <div key={stock.symbol} className="stock-row">
+                <div className="stock-info">
+                  <div className="stock-name">{stock.name}</div>
+                  <div className="stock-meta">{stock.symbol} • {stock.sector}</div>
+                </div>
+                <div className="stock-price">
+                  <div className="price">{formatCurrency(stock.price)}</div>
+                  <div className={`change ${stock.change > 0 ? "positive" : "negative"}`}>
+                    {formatPercent(stock.change)}
+                  </div>
+                </div>
+                <div className={`signal ${signalTone(stock.signal)}`}>
+                  {stock.signal}
+                </div>
+              </div>
+            ))
+          )}
+          
+          {activeTab === "watchlist" && (
+            <div className="empty-state">
+              <p>Watchlist is empty</p>
+              <small>Add stocks from Explore tab</small>
+            </div>
+          )}
+          
+          {activeTab === "orders" && (
+            <div className="empty-state">
+              <p>No active orders</p>
+              <small>Place your first order</small>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
