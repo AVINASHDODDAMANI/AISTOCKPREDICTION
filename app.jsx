@@ -70,7 +70,7 @@ function CandlestickChart({ chart }) {
     try {
       hostRef.current.innerHTML = "";
       lc = window.LightweightCharts.createChart(hostRef.current, {
-        height: 420,
+        height: hostRef.current.clientHeight,
         layout: { backgroundColor: "transparent", textColor: "#c7d6ea" },
         grid: { vertLines: { color: "rgba(255,255,255,0.06)" }, horzLines: { color: "rgba(255,255,255,0.06)" } },
         crosshair: { mode: 1 },
@@ -146,6 +146,8 @@ function App() {
   const [authToken, setAuthToken] = useState(localStorage.getItem("authToken") || "");
   const [currentUser, setCurrentUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(false);
+
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
     async function boot() {
