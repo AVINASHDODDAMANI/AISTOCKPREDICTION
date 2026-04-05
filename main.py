@@ -15,7 +15,7 @@ import pytz
 import yfinance as yf
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 from stocks_catalog import SECTOR_OPTIONS, STOCK_CATALOG
@@ -724,7 +724,7 @@ def root():
 
 @app.get("/app.jsx")
 def react_app():
-    return FileResponse(os.path.join(BASE_DIR, "app.jsx"))
+    return FileResponse(os.path.join(BASE_DIR, "app.jsx"), media_type="text/babel")
 
 
 @app.get("/style.css")
