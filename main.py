@@ -128,6 +128,29 @@ def resolved_yahoo_symbol(resolved_stock: Dict[str, str]) -> str:
     return fix_symbol(resolved_stock["symbol"])
 
 
+def symbol_candidates(resolved_stock: Dict[str, str]) -> List[str]:
+    candidates = []
+    primary = resolved_yahoo_symbol(resolved_stock)
+    candidates.append(primary)
+
+    base_symbol = str(resolved_stock.get("symbol", "")).upper().replace(".NS", "").strip()
+    if base_symbol:
+        candidates.append(f"{base_symbol}.NS")
+        candidates.append(f"{base_symbol}.BO")
+        candidates.append(base_symbol)
+
+    cleaned = []
+    seen = set()
+    for item in candidates:
+        if not item:
+            continue
+        if item in seen:
+            continue
+        seen.add(item)
+        cleaned.append(item)
+    return cleaned
+
+
 def search_yahoo_india(query: str, limit: int = 8) -> List[Dict[str, str]]:
     trimmed_query = query.strip()
     if not trimmed_query:
@@ -288,20 +311,27 @@ def cached_json(key: str, ttl_seconds: int):
     return cache.get(key, ttl_seconds)
 
 
-async def download_ohlc(symbol: str, period: str, interval: str) -> pd.DataFrame:
-    cache_key = f"ohlc::{symbol}::{period}::{interval}"
+async def download_ohlc(symbols: List[str], period: str, interval: str) -> pd.DataFrame:
+    symbol_key = "|".join(symbols)
+    cache_key = f"ohlc::{symbol_key}::{period}::{interval}"
     cached = cached_json(cache_key, 120)
     if cached is not None:
         return cached.copy()
 
-    def _download():
-        return yf.download(symbol, period=period, interval=interval, progress=False)
+    def _download(single_symbol: str):
+        return yf.download(single_symbol, period=period, interval=interval, progress=False)
 
-    df = await asyncio.to_thread(_download)
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    cache.set(cache_key, df.copy())
-    return df
+    for symbol in symbols:
+        df = await asyncio.to_thread(_download, symbol)
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        if not df.empty:
+            cache.set(cache_key, df.copy())
+            return df
+
+    empty = pd.DataFrame()
+    cache.set(cache_key, empty.copy())
+    return empty
 
 
 def ema(series: pd.Series, span: int) -> pd.Series:
@@ -501,12 +531,12 @@ async def analyze_timeframe(symbol: str, timeframe: str) -> Dict[str, object]:
         raise HTTPException(status_code=400, detail="Unsupported timeframe")
 
     resolved = resolve_symbol(symbol)
-    yahoo_symbol = resolved_yahoo_symbol(resolved)
+    candidates = symbol_candidates(resolved)
     config = TIMEFRAME_CONFIG[timeframe]
-    df_raw = await download_ohlc(yahoo_symbol, config["period"], config["interval"])
+    df_raw = await download_ohlc(candidates, config["period"], config["interval"])
 
     if df_raw.empty:
-        raise HTTPException(status_code=404, detail="No market data found for this symbol")
+        raise HTTPException(status_code=404, detail=f'No market data found for "{resolved["name"]}" in timeframe {timeframe}.')
 
     df = enrich_indicators(df_raw)
     if df.empty:
@@ -590,7 +620,7 @@ async def analyze_timeframe(symbol: str, timeframe: str) -> Dict[str, object]:
     timing_tasks = []
     for lower_tf in ["5m", "15m", "1h"]:
         config_tf = TIMEFRAME_CONFIG[lower_tf]
-        timing_tasks.append(download_ohlc(yahoo_symbol, config_tf["period"], config_tf["interval"]))
+        timing_tasks.append(download_ohlc(candidates, config_tf["period"], config_tf["interval"]))
     timing_raw = await asyncio.gather(*timing_tasks, return_exceptions=True)
     timing_views = []
     bullish_count = 0
