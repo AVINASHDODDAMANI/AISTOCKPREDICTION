@@ -1,7 +1,7 @@
-fastapi==0.115.0
-uvicorn[standard]==0.30.6
-yfinance==0.2.54
-pandas==2.2.3
-numpy==2.1.1
-pytz==2024.2
-joblib==1.4.2
+fastapi
+uvicorn
+yfinance
+pandas
+numpy
+pytz
+joblib
