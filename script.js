@@ -3,6 +3,7 @@ const API_BASE = "";
 const elements = {
   symbol: document.getElementById("symbol"),
   sectorFilter: document.getElementById("sectorFilter"),
+  chartInterval: document.getElementById("chartInterval"),
   analyzeBtn: document.getElementById("analyzeBtn"),
   refreshOverview: document.getElementById("refreshOverview"),
   reportTitle: document.getElementById("reportTitle"),
@@ -26,10 +27,26 @@ const elements = {
   newsSentimentBadge: document.getElementById("newsSentimentBadge"),
   newsSummary: document.getElementById("newsSummary"),
   newsList: document.getElementById("newsList"),
+  timingGrid: document.getElementById("timingGrid"),
+  outlookSummary: document.getElementById("outlookSummary"),
+  outlookList: document.getElementById("outlookList"),
   searchSuggestions: document.getElementById("searchSuggestions"),
 };
 
 let activeSuggestions = [];
+const viewState = {
+  symbol: "",
+  analysis: null,
+  news: null,
+  timing: null,
+};
+
+function chartParams(interval) {
+  if (interval === "5m") return { period: "5d", interval: "5m", label: "5 minute candles" };
+  if (interval === "10m") return { period: "5d", interval: "5m", label: "10 minute timing view" };
+  if (interval === "30m") return { period: "1mo", interval: "30m", label: "30 minute candles" };
+  return { period: "3mo", interval: "1d", label: "daily candles" };
+}
 
 function formatCurrency(value) {
   if (value === null || value === undefined) return "--";
@@ -165,9 +182,13 @@ function setLoadingState() {
   elements.newsSentimentBadge.className = "signal-badge neutral";
   elements.newsSummary.textContent = "Loading recent headlines and sentiment...";
   elements.newsList.innerHTML = `<div class="news-empty">Fetching stock news...</div>`;
+  elements.timingGrid.innerHTML = `<div class="news-empty">Loading 5m, 10m, and 30m timing signals...</div>`;
+  elements.outlookSummary.textContent = "Combining indicators, timing, and news to estimate what may happen next.";
+  elements.outlookList.innerHTML = `<li>Building market-condition explanation...</li>`;
 }
 
 function renderAnalysis(data) {
+  viewState.analysis = data;
   const heading = data.company_name
     ? `${data.company_name} (${data.company_symbol})`
     : `${data.company_symbol} Analysis`;
@@ -209,9 +230,13 @@ function renderError(message) {
   elements.newsSentimentBadge.className = "signal-badge bearish";
   elements.newsSummary.textContent = message;
   elements.newsList.innerHTML = `<div class="news-empty">${escapeHtml(message)}</div>`;
+  elements.timingGrid.innerHTML = `<div class="news-empty">${escapeHtml(message)}</div>`;
+  elements.outlookSummary.textContent = message;
+  elements.outlookList.innerHTML = `<li>${escapeHtml(message)}</li>`;
 }
 
 function renderNews(newsData) {
+  viewState.news = newsData;
   const articles = newsData && Array.isArray(newsData.articles) ? newsData.articles : [];
   const overall = newsData && newsData.overall_sentiment ? newsData.overall_sentiment : "Unavailable";
   elements.newsSentimentBadge.textContent = overall.toUpperCase();
@@ -244,11 +269,115 @@ function renderNews(newsData) {
       `
     )
     .join("");
+
+  renderOutlook();
+}
+
+function renderTiming(timingData) {
+  viewState.timing = timingData;
+
+  const timeframes = timingData && Array.isArray(timingData.timeframes) ? timingData.timeframes : [];
+  if (timingData && timingData.error) {
+    elements.timingGrid.innerHTML = `<div class="news-empty">${escapeHtml(timingData.error)}</div>`;
+    renderOutlook();
+    return;
+  }
+
+  if (!timeframes.length) {
+    elements.timingGrid.innerHTML = `<div class="news-empty">No timing data available.</div>`;
+    renderOutlook();
+    return;
+  }
+
+  elements.timingGrid.innerHTML = timeframes
+    .map(
+      (item) => `
+        <article class="metric-card timing-card">
+          <span>${escapeHtml(item.window)}</span>
+          <strong class="${signalClass(item.signal)}-text">${escapeHtml(item.signal)}</strong>
+          <p class="summary">${escapeHtml(item.summary)}</p>
+          <span>${escapeHtml(String(item.confidence))}% confidence</span>
+        </article>
+      `
+    )
+    .join("");
+
+  renderOutlook();
+}
+
+function renderOutlook() {
+  const analysis = viewState.analysis;
+  const news = viewState.news;
+  const timing = viewState.timing;
+
+  if (!analysis) return;
+
+  const outlookPoints = [];
+  let nextMove = "The market looks mixed right now.";
+
+  if (analysis.signal && analysis.signal.includes("BUY")) {
+    nextMove = "The current structure suggests upward continuation if buyers hold above nearby support.";
+  } else if (analysis.signal && analysis.signal.includes("SELL")) {
+    nextMove = "The current structure suggests downside pressure unless price quickly regains resistance.";
+  } else {
+    nextMove = "The market is likely to stay range-bound until a stronger breakout or breakdown appears.";
+  }
+
+  if (analysis.rsi !== null && analysis.rsi !== undefined) {
+    if (analysis.rsi > 70) {
+      outlookPoints.push("RSI is high, so even in an uptrend the next move may include profit-booking or a pullback.");
+    } else if (analysis.rsi < 35) {
+      outlookPoints.push("RSI is near oversold territory, so the market may attempt a bounce if selling weakens.");
+    } else {
+      outlookPoints.push("RSI is in a moderate zone, which supports trend continuation more than extreme reversal.");
+    }
+  }
+
+  if (analysis.momentum_5d !== null && analysis.momentum_5d !== undefined) {
+    if (analysis.momentum_5d > 2) {
+      outlookPoints.push("Short-term momentum is positive, which supports bullish continuation while higher lows remain intact.");
+    } else if (analysis.momentum_5d < -2) {
+      outlookPoints.push("Short-term momentum is negative, which keeps downside risk active unless price stabilizes.");
+    } else {
+      outlookPoints.push("Momentum is soft, which suggests consolidation rather than a decisive move.");
+    }
+  }
+
+  if (timing && Array.isArray(timing.timeframes) && timing.timeframes.length) {
+    const bullishCount = timing.timeframes.filter((item) => item.signal === "BULLISH").length;
+    const bearishCount = timing.timeframes.filter((item) => item.signal === "BEARISH").length;
+
+    if (bullishCount >= 2) {
+      outlookPoints.push("Most intraday timeframes are bullish, so the near-term bias favors upward candles over the next few sessions or intervals.");
+    } else if (bearishCount >= 2) {
+      outlookPoints.push("Most intraday timeframes are bearish, so the near-term bias favors selling pressure and weak pullbacks.");
+    } else {
+      outlookPoints.push("Intraday timeframes are mixed, which means market conditions are choppy and confirmation is still needed.");
+    }
+  }
+
+  if (news && news.overall_sentiment) {
+    if (String(news.overall_sentiment).toUpperCase() === "POSITIVE") {
+      outlookPoints.push("News sentiment is positive, which can strengthen bullish follow-through if price action confirms it.");
+    } else if (String(news.overall_sentiment).toUpperCase() === "NEGATIVE") {
+      outlookPoints.push("News sentiment is negative, which can increase the chance of weakness or failed rallies.");
+    } else {
+      outlookPoints.push("News sentiment is neutral, so price structure matters more than headlines right now.");
+    }
+  }
+
+  if (analysis.volatility !== null && analysis.volatility !== undefined && analysis.volatility > 5) {
+    outlookPoints.push("Volatility is elevated, so the next move may be sharp and risk management matters more than prediction confidence.");
+  }
+
+  elements.outlookSummary.textContent = nextMove;
+  elements.outlookList.innerHTML = outlookPoints.map((point) => `<li>${escapeHtml(point)}</li>`).join("");
 }
 
 function renderChart(historyData) {
   const points = historyData && Array.isArray(historyData.points) ? historyData.points : [];
-  elements.chartMeta.textContent = `Last ${points.length || 0} trading sessions`;
+  const selected = chartParams(elements.chartInterval ? elements.chartInterval.value : "1d");
+  elements.chartMeta.textContent = `Last ${points.length || 0} ${selected.label}`;
 
   if (!points.length) {
     elements.chartContainer.innerHTML = `<div class="chart-empty">No chart data available for this stock.</div>`;
@@ -398,16 +527,58 @@ function renderChart(historyData) {
 }
 
 async function loadChart(symbol) {
+  const selected = chartParams(elements.chartInterval ? elements.chartInterval.value : "1d");
+  let requestInterval = selected.interval;
+  let requestPeriod = selected.period;
+
+  if (elements.chartInterval && elements.chartInterval.value === "10m") {
+    requestInterval = "5m";
+    requestPeriod = "5d";
+  }
+
   try {
-    const response = await fetch(`${API_BASE}/history?symbol=${encodeURIComponent(symbol)}`);
+    const response = await fetch(
+      `${API_BASE}/history?symbol=${encodeURIComponent(symbol)}&period=${encodeURIComponent(requestPeriod)}&interval=${encodeURIComponent(requestInterval)}`
+    );
     if (!response.ok) {
       throw new Error(`Server returned ${response.status}`);
     }
     const data = await response.json();
+    if (elements.chartInterval && elements.chartInterval.value === "10m" && Array.isArray(data.points)) {
+      const grouped = [];
+      for (let index = 0; index < data.points.length; index += 2) {
+        const chunk = data.points.slice(index, index + 2);
+        if (!chunk.length) continue;
+        grouped.push({
+          date: chunk[chunk.length - 1].date,
+          open: chunk[0].open,
+          high: Math.max.apply(null, chunk.map((item) => Number(item.high))),
+          low: Math.min.apply(null, chunk.map((item) => Number(item.low))),
+          close: chunk[chunk.length - 1].close,
+          volume: chunk.reduce((sum, item) => sum + Number(item.volume || 0), 0),
+        });
+      }
+      data.points = grouped;
+    }
     renderChart(data);
   } catch (error) {
     console.error(error);
     elements.chartContainer.innerHTML = `<div class="chart-empty">Price history could not be loaded from the API.</div>`;
+  }
+}
+
+async function loadTiming(symbol) {
+  try {
+    const response = await fetch(`${API_BASE}/timing?symbol=${encodeURIComponent(symbol)}`);
+    if (!response.ok) {
+      throw new Error(`Server returned ${response.status}`);
+    }
+    const data = await response.json();
+    renderTiming(data);
+  } catch (error) {
+    console.error(error);
+    elements.timingGrid.innerHTML = `<div class="news-empty">Timing data could not be loaded.</div>`;
+    renderOutlook();
   }
 }
 
@@ -448,10 +619,12 @@ async function analyzeStock(queryOverride) {
     }
 
     const data = await response.json();
+    viewState.symbol = data.company_symbol || query;
     elements.symbol.value = data.company_name || data.company_symbol || query;
     renderAnalysis(data);
     loadChart(data.company_symbol || query);
     loadNews(data.company_symbol || query);
+    loadTiming(data.company_symbol || query);
   } catch (error) {
     console.error(error);
     renderError("Could not connect to the API. Please try again in a moment.");
@@ -520,6 +693,14 @@ if (elements.sectorFilter) {
   elements.sectorFilter.addEventListener("change", () => {
     if (elements.symbol.value.trim()) {
       loadSuggestions(elements.symbol.value);
+    }
+  });
+}
+
+if (elements.chartInterval) {
+  elements.chartInterval.addEventListener("change", () => {
+    if (viewState.symbol) {
+      loadChart(viewState.symbol);
     }
   });
 }

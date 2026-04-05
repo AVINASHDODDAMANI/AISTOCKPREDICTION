@@ -118,12 +118,44 @@
 
         <div class="chart-panel">
           <div class="chart-head">
-            <h3>Price Trend</h3>
-            <p id="chartMeta">Last 60 trading sessions</p>
+            <div>
+              <h3>Price Trend</h3>
+              <p id="chartMeta">Last 60 trading sessions</p>
+            </div>
+            <div class="chart-actions">
+              <select id="chartInterval">
+                <option value="1d">Daily</option>
+                <option value="5m">5 Minutes</option>
+                <option value="10m">10 Minutes</option>
+                <option value="30m">30 Minutes</option>
+              </select>
+            </div>
           </div>
           <div id="chartContainer" class="chart-container">
             <div class="chart-empty">Run a stock search to load the chart.</div>
           </div>
+        </div>
+
+        <div class="chart-panel">
+          <div class="chart-head">
+            <div>
+              <h3>Timing View</h3>
+              <p>Short-term direction from intraday momentum</p>
+            </div>
+          </div>
+          <div id="timingGrid" class="timing-grid">
+            <div class="news-empty">Analyze a stock to load 5m, 10m, and 30m timing signals.</div>
+          </div>
+        </div>
+
+        <div class="reason-panel">
+          <h3>What May Happen Next</h3>
+          <p class="summary" id="outlookSummary">
+            Search a stock to get a combined outlook from chart strength, RSI, momentum, news sentiment, and short-term timing.
+          </p>
+          <ul id="outlookList">
+            <li>The market outlook explanation will appear here after analysis.</li>
+          </ul>
         </div>
 
         <div class="reason-panel">

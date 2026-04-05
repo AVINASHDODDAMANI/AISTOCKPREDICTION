@@ -389,6 +389,10 @@ button:hover {
   gap: 12px;
 }
 
+.chart-actions {
+  min-width: 170px;
+}
+
 .chart-head p {
   margin: 0;
   color: var(--muted);
@@ -541,6 +545,13 @@ button:hover {
 .timing-card .summary {
   font-size: 0.92rem;
   margin: 10px 0;
+}
+
+#outlookList {
+  margin: 12px 0 0;
+  padding-left: 20px;
+  line-height: 1.7;
+  color: var(--muted);
 }
 
 .bullish-text {
