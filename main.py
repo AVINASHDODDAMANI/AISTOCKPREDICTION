@@ -1,6 +1,9 @@
 import asyncio
+import hashlib
 import json
 import os
+import secrets
+import sqlite3
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime
@@ -13,7 +16,7 @@ import numpy as np
 import pandas as pd
 import pytz
 import yfinance as yf
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
@@ -25,6 +28,7 @@ app = FastAPI(title="AI Stock Trading Dashboard")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 WATCHLIST_PATH = os.path.join(BASE_DIR, "watchlist_store.json")
+DB_PATH = os.path.join(BASE_DIR, "app_data.db")
 
 SPECIAL_INSTRUMENTS = [
     {"symbol": "NIFTY", "name": "Nifty 50", "sector": "Index", "yahoo_symbol": "^NSEI", "instrument_type": "INDEX"},
@@ -56,6 +60,17 @@ NEGATIVE_KEYWORDS = {
 
 class WatchlistPayload(BaseModel):
     symbol: str
+
+
+class RegisterPayload(BaseModel):
+    fullName: str
+    phone: str
+    password: str
+
+
+class LoginPayload(BaseModel):
+    phone: str
+    password: str
 
 
 def load_model():
@@ -97,9 +112,154 @@ app.add_middleware(
 )
 
 
+def db_connection():
+    connection = sqlite3.connect(DB_PATH)
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+def init_db():
+    connection = db_connection()
+    cursor = connection.cursor()
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            phone TEXT NOT NULL UNIQUE,
+            password_salt TEXT NOT NULL,
+            password_hash TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_watchlist (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            symbol TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(user_id, symbol),
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
+        """
+    )
+    connection.commit()
+    connection.close()
+
+
+@app.on_event("startup")
+def startup_event():
+    init_db()
+
+
 def get_ist_timestamp() -> str:
     ist = pytz.timezone("Asia/Kolkata")
     return datetime.now(ist).strftime("%d-%m-%Y %H:%M:%S")
+
+
+def normalize_phone(phone: str) -> str:
+    digits = "".join(character for character in phone if character.isdigit())
+    if len(digits) < 10:
+        raise HTTPException(status_code=400, detail="Enter a valid phone number.")
+    return digits
+
+
+def hash_password(password: str, salt_hex: str) -> str:
+    salt = bytes.fromhex(salt_hex)
+    derived = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 120000)
+    return derived.hex()
+
+
+def create_password_hash(password: str) -> tuple[str, str]:
+    if len(password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
+    salt_hex = secrets.token_hex(16)
+    return salt_hex, hash_password(password, salt_hex)
+
+
+def fetch_user_by_phone(phone: str):
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT * FROM users WHERE phone = ?", (phone,))
+        return cursor.fetchone()
+    finally:
+        connection.close()
+
+
+def create_session(user_id: int) -> str:
+    token = secrets.token_urlsafe(32)
+    created_at = datetime.utcnow()
+    expires_at = created_at.timestamp() + (60 * 60 * 24 * 7)
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+            (token, user_id, created_at.isoformat(), str(expires_at)),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return token
+
+
+def get_user_from_token(token: str):
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            SELECT users.* FROM sessions
+            JOIN users ON users.id = sessions.user_id
+            WHERE sessions.token = ?
+            """,
+            (token,),
+        )
+        user = cursor.fetchone()
+        cursor.execute("SELECT expires_at FROM sessions WHERE token = ?", (token,))
+        session = cursor.fetchone()
+        if not user or not session:
+            return None
+        if float(session["expires_at"]) < datetime.utcnow().timestamp():
+            cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            connection.commit()
+            return None
+        return user
+    finally:
+        connection.close()
+
+
+def parse_bearer_token(authorization: Optional[str]) -> Optional[str]:
+    if not authorization:
+        return None
+    prefix = "Bearer "
+    if not authorization.startswith(prefix):
+        return None
+    return authorization[len(prefix):].strip() or None
+
+
+def require_authenticated_user(authorization: Optional[str]):
+    token = parse_bearer_token(authorization)
+    if not token:
+        raise HTTPException(status_code=401, detail="Login required.")
+    user = get_user_from_token(token)
+    if not user:
+        raise HTTPException(status_code=401, detail="Session expired or invalid.")
+    return user, token
 
 
 def normalize_alias(value: str) -> str:
@@ -760,6 +920,44 @@ def write_watchlist_store(symbols: List[str]) -> List[str]:
     return normalized
 
 
+def read_user_watchlist(user_id: int) -> List[str]:
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("SELECT symbol FROM user_watchlist WHERE user_id = ? ORDER BY id DESC", (user_id,))
+        rows = cursor.fetchall()
+        return [row["symbol"] for row in rows]
+    finally:
+        connection.close()
+
+
+def add_user_watchlist_symbol(user_id: int, symbol: str) -> List[str]:
+    resolved = resolve_symbol(symbol)["symbol"]
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            "INSERT OR IGNORE INTO user_watchlist (user_id, symbol, created_at) VALUES (?, ?, ?)",
+            (user_id, resolved, get_ist_timestamp()),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+    return read_user_watchlist(user_id)
+
+
+def remove_user_watchlist_symbol(user_id: int, symbol: str) -> List[str]:
+    resolved = resolve_symbol(symbol)["symbol"]
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM user_watchlist WHERE user_id = ? AND symbol = ?", (user_id, resolved))
+        connection.commit()
+    finally:
+        connection.close()
+    return read_user_watchlist(user_id)
+
+
 @app.get("/")
 def root():
     return FileResponse(os.path.join(BASE_DIR, "index.html"))
@@ -783,6 +981,74 @@ def api_meta():
         "sectors": SECTOR_OPTIONS + ["Index", "Derivatives"],
         "watchlist": read_watchlist_store(),
     }
+
+
+@app.post("/api/auth/register")
+def api_register(payload: RegisterPayload):
+    full_name = payload.fullName.strip()
+    phone = normalize_phone(payload.phone)
+    if not full_name:
+        raise HTTPException(status_code=400, detail="Full name is required.")
+    if fetch_user_by_phone(phone):
+        raise HTTPException(status_code=409, detail="Phone number is already registered.")
+
+    salt_hex, password_hash = create_password_hash(payload.password)
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute(
+            """
+            INSERT INTO users (full_name, phone, password_salt, password_hash, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (full_name, phone, salt_hex, password_hash, get_ist_timestamp()),
+        )
+        connection.commit()
+        user_id = cursor.lastrowid
+    finally:
+        connection.close()
+
+    token = create_session(user_id)
+    return {
+        "token": token,
+        "user": {"id": user_id, "fullName": full_name, "phone": phone},
+    }
+
+
+@app.post("/api/auth/login")
+def api_login(payload: LoginPayload):
+    phone = normalize_phone(payload.phone)
+    user = fetch_user_by_phone(phone)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid phone number or password.")
+
+    if hash_password(payload.password, user["password_salt"]) != user["password_hash"]:
+        raise HTTPException(status_code=401, detail="Invalid phone number or password.")
+
+    token = create_session(int(user["id"]))
+    return {
+        "token": token,
+        "user": {"id": int(user["id"]), "fullName": user["full_name"], "phone": user["phone"]},
+    }
+
+
+@app.get("/api/auth/me")
+def api_me(authorization: Optional[str] = Header(default=None)):
+    user, _ = require_authenticated_user(authorization)
+    return {"user": {"id": int(user["id"]), "fullName": user["full_name"], "phone": user["phone"]}}
+
+
+@app.post("/api/auth/logout")
+def api_logout(authorization: Optional[str] = Header(default=None)):
+    _, token = require_authenticated_user(authorization)
+    connection = db_connection()
+    try:
+        cursor = connection.cursor()
+        cursor.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        connection.commit()
+    finally:
+        connection.close()
+    return {"success": True}
 
 
 @app.get("/api/search")
@@ -810,22 +1076,22 @@ async def api_compare(symbols: str = Query(..., description="Comma separated sym
 
 
 @app.get("/api/watchlist")
-async def api_watchlist(timeframe: str = Query("1d")):
-    symbols = read_watchlist_store()
+async def api_watchlist(timeframe: str = Query("1d"), authorization: Optional[str] = Header(default=None)):
+    token = parse_bearer_token(authorization)
+    user = get_user_from_token(token) if token else None
+    symbols = read_user_watchlist(int(user["id"])) if user else read_watchlist_store()
     return {"symbols": symbols, "items": await summarize_watchlist(symbols, timeframe)}
 
 
 @app.post("/api/watchlist")
-async def api_watchlist_add(payload: WatchlistPayload):
-    current = read_watchlist_store()
-    updated = write_watchlist_store(current + [payload.symbol])
+async def api_watchlist_add(payload: WatchlistPayload, authorization: Optional[str] = Header(default=None)):
+    user, _ = require_authenticated_user(authorization)
+    updated = add_user_watchlist_symbol(int(user["id"]), payload.symbol)
     return {"symbols": updated}
 
 
 @app.delete("/api/watchlist/{symbol}")
-async def api_watchlist_delete(symbol: str):
-    current = read_watchlist_store()
-    resolved = resolve_symbol(symbol)["symbol"]
-    updated = [item for item in current if item != resolved]
-    saved = write_watchlist_store(updated)
-    return {"symbols": saved}
+async def api_watchlist_delete(symbol: str, authorization: Optional[str] = Header(default=None)):
+    user, _ = require_authenticated_user(authorization)
+    updated = remove_user_watchlist_symbol(int(user["id"]), symbol)
+    return {"symbols": updated}

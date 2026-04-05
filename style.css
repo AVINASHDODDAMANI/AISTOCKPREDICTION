@@ -205,6 +205,32 @@ button:hover {
   color: var(--muted);
 }
 
+.auth-panel {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.auth-form,
+.auth-logged {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.auth-tabs button {
+  flex: 1;
+}
+
+.auth-logged small {
+  color: var(--muted);
+}
+
 .dashboard-grid {
   margin-top: 24px;
   display: grid;

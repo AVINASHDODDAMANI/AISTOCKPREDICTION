@@ -9,6 +9,10 @@ const API = {
   watchlist: (timeframe) => `/api/watchlist?timeframe=${encodeURIComponent(timeframe)}`,
   addWatchlist: "/api/watchlist",
   deleteWatchlist: (symbol) => `/api/watchlist/${encodeURIComponent(symbol)}`,
+  register: "/api/auth/register",
+  login: "/api/auth/login",
+  me: "/api/auth/me",
+  logout: "/api/auth/logout",
 };
 
 const TIMEFRAME_OPTIONS = [
@@ -136,12 +140,28 @@ function App() {
   const [watchlistInput, setWatchlistInput] = useState("");
   const [resolvedSearch, setResolvedSearch] = useState(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [authMode, setAuthMode] = useState("login");
+  const [authForm, setAuthForm] = useState({ fullName: "", phone: "", password: "" });
+  const [authToken, setAuthToken] = useState(localStorage.getItem("authToken") || "");
+  const [currentUser, setCurrentUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(false);
 
   useEffect(() => {
     async function boot() {
       try {
         const metaPayload = await fetchJson(API.meta);
         setMeta(metaPayload);
+        if (authToken) {
+          try {
+            const me = await fetchJson(API.me, {
+              headers: { Authorization: `Bearer ${authToken}` },
+            });
+            setCurrentUser(me.user);
+          } catch (_) {
+            localStorage.removeItem("authToken");
+            setAuthToken("");
+          }
+        }
         await Promise.all([
           loadDashboard(query, selectedTimeframe),
           loadWatchlist(selectedTimeframe),
@@ -198,7 +218,8 @@ function App() {
   async function loadWatchlist(timeframe) {
     setWatchlistLoading(true);
     try {
-      const payload = await fetchJson(API.watchlist(timeframe));
+      const headers = authToken ? { Authorization: `Bearer ${authToken}` } : undefined;
+      const payload = await fetchJson(API.watchlist(timeframe), headers ? { headers } : undefined);
       setWatchlist(payload.items || []);
     } finally {
       setWatchlistLoading(false);
@@ -244,12 +265,16 @@ function App() {
   }
 
   async function addToWatchlist() {
+    if (!authToken) {
+      setError("Please login first to save your watchlist.");
+      return;
+    }
     if (!watchlistInput.trim()) return;
     const resolved = await resolveSelection(watchlistInput);
     if (!resolved || !resolved.symbol) return;
     await fetchJson(API.addWatchlist, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${authToken}` },
       body: JSON.stringify({ symbol: resolved.symbol }),
     });
     setWatchlistInput("");
@@ -257,7 +282,14 @@ function App() {
   }
 
   async function removeFromWatchlist(symbol) {
-    await fetchJson(API.deleteWatchlist(symbol), { method: "DELETE" });
+    if (!authToken) {
+      setError("Please login first to manage your watchlist.");
+      return;
+    }
+    await fetchJson(API.deleteWatchlist(symbol), {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${authToken}` },
+    });
     await loadWatchlist(selectedTimeframe);
   }
 
@@ -269,6 +301,45 @@ function App() {
   }
 
   const heroSuggestions = useMemo(() => searchResults.slice(0, 8), [searchResults]);
+
+  async function submitAuth(mode) {
+    setAuthLoading(true);
+    setError("");
+    try {
+      const url = mode === "register" ? API.register : API.login;
+      const payload = mode === "register"
+        ? authForm
+        : { phone: authForm.phone, password: authForm.password };
+      const result = await fetchJson(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      localStorage.setItem("authToken", result.token);
+      setAuthToken(result.token);
+      setCurrentUser(result.user);
+      setAuthForm({ fullName: "", phone: "", password: "" });
+      await loadWatchlist(selectedTimeframe);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function logout() {
+    if (!authToken) return;
+    try {
+      await fetchJson(API.logout, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+    } catch (_) {}
+    localStorage.removeItem("authToken");
+    setAuthToken("");
+    setCurrentUser(null);
+    await loadWatchlist(selectedTimeframe);
+  }
 
   return (
     <div className="app-shell">
@@ -341,6 +412,45 @@ function App() {
             <li>RSI, MACD, and Bollinger Bands</li>
             <li>AI-style signal scoring with confidence and dynamic explanation</li>
           </ul>
+
+          <div className="auth-panel">
+            <p className="card-label">User Login</p>
+            {currentUser ? (
+              <div className="auth-logged">
+                <strong>{currentUser.fullName}</strong>
+                <small>{currentUser.phone}</small>
+                <button className="ghost-btn" onClick={logout}>Logout</button>
+              </div>
+            ) : (
+              <div className="auth-form">
+                <div className="auth-tabs">
+                  <button className={authMode === "login" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("login")}>Login</button>
+                  <button className={authMode === "register" ? "active-tab" : "ghost-btn"} onClick={() => setAuthMode("register")}>Register</button>
+                </div>
+                {authMode === "register" && (
+                  <input
+                    value={authForm.fullName}
+                    onChange={(event) => setAuthForm({ ...authForm, fullName: event.target.value })}
+                    placeholder="Full name"
+                  />
+                )}
+                <input
+                  value={authForm.phone}
+                  onChange={(event) => setAuthForm({ ...authForm, phone: event.target.value })}
+                  placeholder="Phone number"
+                />
+                <input
+                  type="password"
+                  value={authForm.password}
+                  onChange={(event) => setAuthForm({ ...authForm, password: event.target.value })}
+                  placeholder="Password"
+                />
+                <button onClick={() => submitAuth(authMode)} disabled={authLoading}>
+                  {authLoading ? "Please wait..." : authMode === "register" ? "Create Account" : "Login"}
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </header>
 
