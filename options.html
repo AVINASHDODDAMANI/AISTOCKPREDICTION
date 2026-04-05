@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Options Chain and Timing View</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Manrope:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="page-shell">
+    <div class="top-links">
+      <a href="/" class="top-link">Dashboard</a>
+      <a href="/options" class="top-link active-link">Options Chain</a>
+    </div>
+
+    <header class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Options and Intraday Timing</p>
+        <h1>Track option chains with short-term market timing views.</h1>
+        <p class="hero-text">
+          Search stocks, indexes, or futures aliases like NIFTY, BANKNIFTY, SENSEX, or NIFTYFUT
+          and inspect expiries, option ladders, and 5 minute, 10 minute, and 30 minute directional bias.
+        </p>
+
+        <div class="search-panel">
+          <label for="optionsSymbol" class="input-label">Enter symbol, index, or futures alias</label>
+          <div class="search-box">
+            <div class="search-row">
+              <input type="text" id="optionsSymbol" placeholder="NIFTY, BANKNIFTY, RELIANCE, NIFTYFUT" />
+              <button id="loadOptionsBtn">Load Options</button>
+            </div>
+            <div id="optionsSuggestions" class="search-suggestions"></div>
+          </div>
+          <div class="filter-row">
+            <select id="optionsExpiry">
+              <option value="">Select expiry after loading</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-card">
+        <p class="card-label">This page includes</p>
+        <ul>
+          <li>Index support for NIFTY, BANKNIFTY, and SENSEX</li>
+          <li>Futures aliases like NIFTYFUT and BANKNIFTYFUT</li>
+          <li>Calls and puts tables near the current price</li>
+          <li>Short-term timing signals for 5m, 10m, and 30m windows</li>
+        </ul>
+      </div>
+    </header>
+
+    <main class="dashboard options-dashboard">
+      <section class="panel primary-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Options Snapshot</p>
+            <h2 id="optionsTitle">Waiting for options data</h2>
+          </div>
+          <span class="signal-badge neutral" id="optionsInstrumentType">UNLOADED</span>
+        </div>
+        <p class="summary" id="optionsSummary">
+          Load a stock or index to inspect its option chain and near-term directional timing.
+        </p>
+        <div class="levels-grid">
+          <div class="level-box">
+            <span>Underlying Price</span>
+            <strong id="underlyingPrice">--</strong>
+          </div>
+          <div class="level-box">
+            <span>Selected Expiry</span>
+            <strong id="selectedExpiry">--</strong>
+          </div>
+          <div class="level-box">
+            <span>Generated</span>
+            <strong id="optionsGeneratedAt">--</strong>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel watchlist-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Timing View</p>
+            <h2>Short-Term Bias</h2>
+          </div>
+        </div>
+        <div id="timingGrid" class="timing-grid">
+          <div class="news-empty">Load an instrument to view 5m, 10m, and 30m timing signals.</div>
+        </div>
+      </section>
+
+      <section class="panel news-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Calls</p>
+            <h2>Near At-The-Money</h2>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Strike</th>
+                <th>LTP</th>
+                <th>Bid</th>
+                <th>Ask</th>
+                <th>Volume</th>
+                <th>OI</th>
+                <th>IV %</th>
+              </tr>
+            </thead>
+            <tbody id="callsTable">
+              <tr><td colspan="7">No data loaded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel news-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Puts</p>
+            <h2>Near At-The-Money</h2>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Strike</th>
+                <th>LTP</th>
+                <th>Bid</th>
+                <th>Ask</th>
+                <th>Volume</th>
+                <th>OI</th>
+                <th>IV %</th>
+              </tr>
+            </thead>
+            <tbody id="putsTable">
+              <tr><td colspan="7">No data loaded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

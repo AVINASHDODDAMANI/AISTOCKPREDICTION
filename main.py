@@ -29,6 +29,51 @@ DEFAULT_WATCHLIST = [
     "SBIN",
 ]
 
+SPECIAL_INSTRUMENTS = [
+    {
+        "symbol": "NIFTY",
+        "name": "Nifty 50",
+        "sector": "Index",
+        "yahoo_symbol": "^NSEI",
+        "instrument_type": "INDEX",
+    },
+    {
+        "symbol": "BANKNIFTY",
+        "name": "Nifty Bank",
+        "sector": "Index",
+        "yahoo_symbol": "^NSEBANK",
+        "instrument_type": "INDEX",
+    },
+    {
+        "symbol": "SENSEX",
+        "name": "BSE Sensex",
+        "sector": "Index",
+        "yahoo_symbol": "^BSESN",
+        "instrument_type": "INDEX",
+    },
+    {
+        "symbol": "NIFTYFUT",
+        "name": "Nifty Futures",
+        "sector": "Derivatives",
+        "yahoo_symbol": "^NSEI",
+        "instrument_type": "FUTURES_PROXY",
+    },
+    {
+        "symbol": "BANKNIFTYFUT",
+        "name": "Bank Nifty Futures",
+        "sector": "Derivatives",
+        "yahoo_symbol": "^NSEBANK",
+        "instrument_type": "FUTURES_PROXY",
+    },
+    {
+        "symbol": "SENSEXFUT",
+        "name": "Sensex Futures",
+        "sector": "Derivatives",
+        "yahoo_symbol": "^BSESN",
+        "instrument_type": "FUTURES_PROXY",
+    },
+]
+
 POSITIVE_KEYWORDS = {
     "surge",
     "growth",
@@ -98,39 +143,79 @@ app.add_middleware(
 
 def fix_symbol(symbol: str) -> str:
     clean = symbol.upper().strip()
+    if clean.startswith("^"):
+        return clean
     if not clean.endswith(".NS"):
         clean += ".NS"
     return clean
 
 
 def normalize_stock_query(query: str) -> str:
-    return query.upper().replace(".NS", "").strip()
+    return (
+        query.upper()
+        .replace(".NS", "")
+        .replace(" ", "")
+        .replace("-", "")
+        .replace("&", "")
+        .strip()
+    )
+
+
+def normalize_alias(value: str) -> str:
+    return (
+        value.upper()
+        .replace(" ", "")
+        .replace("-", "")
+        .replace("&", "")
+        .replace(".NS", "")
+        .strip()
+    )
 
 
 def resolve_stock_query(query: str) -> Dict[str, str]:
     clean_query = normalize_stock_query(query)
 
+    for instrument in SPECIAL_INSTRUMENTS:
+        symbol_aliases = {
+            normalize_alias(instrument["symbol"]),
+            normalize_alias(instrument["name"]),
+        }
+        if instrument["symbol"] == "NIFTYFUT":
+            symbol_aliases.update({"NIFTYFUT", "NIFTYFUTURE", "NIFTYFUTURES", "NIFTY50FUT"})
+        if instrument["symbol"] == "BANKNIFTYFUT":
+            symbol_aliases.update({"BANKNIFTYFUT", "BANKNIFTYFUTURE", "BANKNIFTYFUTURES"})
+        if instrument["symbol"] == "SENSEXFUT":
+            symbol_aliases.update({"SENSEXFUT", "SENSEXFUTURE", "SENSEXFUTURES"})
+        if clean_query in symbol_aliases:
+            return instrument
+
     for stock in STOCK_CATALOG:
-        if clean_query == stock["symbol"] or clean_query == stock["name"].upper():
+        if clean_query == normalize_alias(stock["symbol"]) or clean_query == normalize_alias(stock["name"]):
             return stock
 
     for stock in STOCK_CATALOG:
-        name_upper = stock["name"].upper()
-        if clean_query in stock["symbol"] or clean_query in name_upper:
+        symbol_alias = normalize_alias(stock["symbol"])
+        name_alias = normalize_alias(stock["name"])
+        if clean_query in symbol_alias or clean_query in name_alias:
             return stock
 
     live_results = search_yahoo_india(clean_query, limit=1)
     if live_results:
         return live_results[0]
 
-    return {"symbol": clean_query, "name": clean_query.title()}
+    return {
+        "symbol": clean_query,
+        "name": clean_query.title(),
+        "sector": "Unknown",
+        "instrument_type": "EQUITY",
+    }
 
 
 def search_stock_catalog(query: str, limit: int = 8, sector: str = "") -> List[Dict[str, str]]:
     clean_query = normalize_stock_query(query)
     selected_sector = sector.strip().lower()
     catalog = [
-        stock for stock in STOCK_CATALOG
+        stock for stock in (STOCK_CATALOG + SPECIAL_INSTRUMENTS)
         if not selected_sector or stock["sector"].lower() == selected_sector
     ]
 
@@ -141,19 +226,20 @@ def search_stock_catalog(query: str, limit: int = 8, sector: str = "") -> List[D
     for stock in catalog:
         symbol = stock["symbol"]
         name = stock["name"]
-        name_upper = name.upper()
-        sector_name = stock["sector"].upper()
+        symbol_alias = normalize_alias(symbol)
+        name_alias = normalize_alias(name)
+        sector_name = normalize_alias(stock["sector"])
 
         score = 0
-        if symbol.startswith(clean_query):
+        if symbol_alias.startswith(clean_query):
             score += 4
-        if name_upper.startswith(clean_query):
+        if name_alias.startswith(clean_query):
             score += 5
         if sector_name.startswith(clean_query):
             score += 1
-        if clean_query in symbol:
+        if clean_query in symbol_alias:
             score += 2
-        if clean_query in name_upper:
+        if clean_query in name_alias:
             score += 3
         if clean_query in sector_name:
             score += 1
@@ -207,9 +293,10 @@ def search_yahoo_india(query: str, limit: int = 8) -> List[Dict[str, str]]:
             continue
         if symbol in seen_symbols:
             continue
-        if ".NS" not in str(quote.get("symbol", "")).upper() and "NSE" not in exchange:
+        raw_symbol = str(quote.get("symbol", "")).upper()
+        if ".NS" not in raw_symbol and "NSE" not in exchange and symbol not in {"^NSEI", "^NSEBANK", "^BSESN"}:
             continue
-        if quote_type and quote_type not in {"EQUITY", "MUTUALFUND", "ETF"}:
+        if quote_type and quote_type not in {"EQUITY", "MUTUALFUND", "ETF", "INDEX", "FUTURE"}:
             continue
 
         seen_symbols.add(symbol)
@@ -218,6 +305,8 @@ def search_yahoo_india(query: str, limit: int = 8) -> List[Dict[str, str]]:
                 "symbol": symbol,
                 "name": str(short_name),
                 "sector": "Live Search",
+                "instrument_type": quote_type or "UNKNOWN",
+                "yahoo_symbol": raw_symbol if raw_symbol.startswith("^") else quote.get("symbol", ""),
             }
         )
 
@@ -247,6 +336,12 @@ def combined_stock_search(query: str, limit: int = 8, sector: str = "") -> List[
             break
 
     return merged
+
+
+def resolved_yahoo_symbol(resolved_stock: Dict[str, str]) -> str:
+    if resolved_stock.get("yahoo_symbol"):
+        return str(resolved_stock["yahoo_symbol"])
+    return fix_symbol(resolved_stock["symbol"])
 
 
 def get_ist_timestamp() -> str:
@@ -279,6 +374,196 @@ def prepare_dataframe(symbol: str) -> pd.DataFrame:
     df["Volatility14"] = df["Return"].rolling(14).std() * np.sqrt(14)
     df["RSI14"] = calculate_rsi(df["Close"], 14)
     return df.dropna()
+
+
+def timeframe_signal(df: pd.DataFrame, label: str) -> Dict[str, str]:
+    if df.empty or len(df) < 3:
+        return {
+            "window": label,
+            "signal": "NO DATA",
+            "confidence": 0,
+            "summary": "Not enough intraday data for this timeframe.",
+        }
+
+    close_series = df["Close"].astype(float)
+    recent_change = ((close_series.iloc[-1] / close_series.iloc[-2]) - 1) * 100
+    short_change = ((close_series.iloc[-1] / close_series.iloc[-3]) - 1) * 100
+    moving_avg = close_series.tail(min(6, len(close_series))).mean()
+    latest_price = close_series.iloc[-1]
+
+    score = 0
+    if latest_price > moving_avg:
+        score += 1
+    else:
+        score -= 1
+
+    if recent_change > 0.15:
+        score += 1
+    elif recent_change < -0.15:
+        score -= 1
+
+    if short_change > 0.25:
+        score += 1
+    elif short_change < -0.25:
+        score -= 1
+
+    if score >= 2:
+        signal = "BULLISH"
+    elif score <= -2:
+        signal = "BEARISH"
+    else:
+        signal = "SIDEWAYS"
+
+    confidence = min(90, 55 + abs(score) * 10)
+    summary = (
+        f"{label} view is {signal.lower()} with recent move {recent_change:.2f}% "
+        f"and short momentum {short_change:.2f}%."
+    )
+
+    return {
+        "window": label,
+        "signal": signal,
+        "confidence": confidence,
+        "summary": summary,
+    }
+
+
+def get_timing_analysis(symbol: str) -> Dict:
+    resolved_stock = resolve_stock_query(symbol)
+    display_symbol = resolved_stock["symbol"]
+    company_name = resolved_stock["name"]
+    yahoo_symbol = resolved_yahoo_symbol(resolved_stock)
+    current_time = get_ist_timestamp()
+
+    try:
+        df_5m = yf.download(yahoo_symbol, period="5d", interval="5m", progress=False)
+        df_30m = yf.download(yahoo_symbol, period="1mo", interval="30m", progress=False)
+
+        if isinstance(df_5m.columns, pd.MultiIndex):
+            df_5m.columns = df_5m.columns.get_level_values(0)
+        if isinstance(df_30m.columns, pd.MultiIndex):
+            df_30m.columns = df_30m.columns.get_level_values(0)
+
+        if df_5m.empty and df_30m.empty:
+            return {
+                "stock": display_symbol,
+                "company_name": company_name,
+                "generated_at_ist": current_time,
+                "timeframes": [],
+                "error": "Intraday timing data is unavailable for this instrument right now.",
+            }
+
+        timeframes = []
+        if not df_5m.empty:
+            timeframes.append(timeframe_signal(df_5m.tail(24), "5 Minutes"))
+            timeframes.append(timeframe_signal(df_5m.tail(36), "10 Minutes"))
+        if not df_30m.empty:
+            timeframes.append(timeframe_signal(df_30m.tail(16), "30 Minutes"))
+
+        return {
+            "stock": display_symbol,
+            "company_name": company_name,
+            "generated_at_ist": current_time,
+            "timeframes": timeframes,
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "stock": display_symbol,
+            "company_name": company_name,
+            "generated_at_ist": current_time,
+            "timeframes": [],
+            "error": str(exc),
+        }
+
+
+def get_options_chain(symbol: str, expiry: str = "") -> Dict:
+    resolved_stock = resolve_stock_query(symbol)
+    display_symbol = resolved_stock["symbol"]
+    company_name = resolved_stock["name"]
+    yahoo_symbol = resolved_yahoo_symbol(resolved_stock)
+    current_time = get_ist_timestamp()
+
+    try:
+        ticker = yf.Ticker(yahoo_symbol)
+        expiries = list(getattr(ticker, "options", []) or [])
+
+        if not expiries:
+            return {
+                "stock": display_symbol,
+                "company_name": company_name,
+                "generated_at_ist": current_time,
+                "expiries": [],
+                "selected_expiry": None,
+                "underlying_price": None,
+                "calls": [],
+                "puts": [],
+                "timing": get_timing_analysis(symbol),
+                "error": "Options data is not available for this instrument on Yahoo Finance.",
+            }
+
+        selected_expiry = expiry if expiry in expiries else expiries[0]
+        chain = ticker.option_chain(selected_expiry)
+        calls_df = chain.calls.copy()
+        puts_df = chain.puts.copy()
+
+        history = ticker.history(period="5d", interval="1d")
+        underlying_price = None
+        if not history.empty:
+            underlying_price = round(float(history["Close"].iloc[-1]), 2)
+
+        def compact_rows(df: pd.DataFrame) -> List[Dict]:
+            if df.empty:
+                return []
+
+            working = df.copy()
+            if underlying_price is not None and "strike" in working.columns:
+                working["distance"] = (working["strike"] - underlying_price).abs()
+                working = working.sort_values("distance").head(12)
+            else:
+                working = working.head(12)
+
+            rows = []
+            for _, row in working.iterrows():
+                rows.append(
+                    {
+                        "contractSymbol": str(row.get("contractSymbol", "")),
+                        "strike": round(float(row.get("strike", 0)), 2),
+                        "lastPrice": round(float(row.get("lastPrice", 0) or 0), 2),
+                        "bid": round(float(row.get("bid", 0) or 0), 2),
+                        "ask": round(float(row.get("ask", 0) or 0), 2),
+                        "volume": int(row.get("volume", 0) or 0),
+                        "openInterest": int(row.get("openInterest", 0) or 0),
+                        "impliedVolatility": round(float(row.get("impliedVolatility", 0) or 0) * 100, 2),
+                    }
+                )
+            return rows
+
+        return {
+            "stock": display_symbol,
+            "company_name": company_name,
+            "generated_at_ist": current_time,
+            "expiries": expiries,
+            "selected_expiry": selected_expiry,
+            "underlying_price": underlying_price,
+            "calls": compact_rows(calls_df),
+            "puts": compact_rows(puts_df),
+            "timing": get_timing_analysis(symbol),
+            "error": None,
+        }
+    except Exception as exc:
+        return {
+            "stock": display_symbol,
+            "company_name": company_name,
+            "generated_at_ist": current_time,
+            "expiries": [],
+            "selected_expiry": None,
+            "underlying_price": None,
+            "calls": [],
+            "puts": [],
+            "timing": get_timing_analysis(symbol),
+            "error": str(exc),
+        }
 
 
 def heuristic_signal(latest: pd.Series) -> Tuple[str, int, List[str]]:
@@ -363,7 +648,8 @@ def analyze_stock(symbol: str) -> Dict:
     resolved_stock = resolve_stock_query(symbol)
     display_symbol = resolved_stock["symbol"]
     company_name = resolved_stock["name"]
-    normalized_symbol = fix_symbol(display_symbol)
+    instrument_type = resolved_stock.get("instrument_type", "EQUITY")
+    normalized_symbol = resolved_yahoo_symbol(resolved_stock)
     current_time = get_ist_timestamp()
 
     try:
@@ -373,6 +659,7 @@ def analyze_stock(symbol: str) -> Dict:
                 "stock": normalized_symbol,
                 "company_symbol": display_symbol,
                 "company_name": company_name,
+                "instrument_type": instrument_type,
                 "signal": "NO DATA",
                 "trend": "Unavailable",
                 "confidence": 0,
@@ -424,6 +711,7 @@ def analyze_stock(symbol: str) -> Dict:
             "stock": normalized_symbol,
             "company_symbol": display_symbol,
             "company_name": company_name,
+            "instrument_type": instrument_type,
             "signal": signal,
             "trend": trend,
             "confidence": confidence,
@@ -446,6 +734,7 @@ def analyze_stock(symbol: str) -> Dict:
             "stock": normalized_symbol,
             "company_symbol": display_symbol,
             "company_name": company_name,
+            "instrument_type": instrument_type,
             "signal": "ERROR",
             "trend": "Unavailable",
             "confidence": 0,
@@ -468,7 +757,8 @@ def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") ->
     resolved_stock = resolve_stock_query(symbol)
     display_symbol = resolved_stock["symbol"]
     company_name = resolved_stock["name"]
-    normalized_symbol = fix_symbol(display_symbol)
+    instrument_type = resolved_stock.get("instrument_type", "EQUITY")
+    normalized_symbol = resolved_yahoo_symbol(resolved_stock)
     current_time = get_ist_timestamp()
 
     try:
@@ -482,6 +772,7 @@ def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") ->
                 "stock": normalized_symbol,
                 "company_symbol": display_symbol,
                 "company_name": company_name,
+                "instrument_type": instrument_type,
                 "generated_at_ist": current_time,
                 "points": [],
                 "error": "No recent data was returned for this symbol.",
@@ -505,6 +796,7 @@ def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") ->
             "stock": normalized_symbol,
             "company_symbol": display_symbol,
             "company_name": company_name,
+            "instrument_type": instrument_type,
             "generated_at_ist": current_time,
             "points": points,
             "error": None,
@@ -514,6 +806,7 @@ def get_stock_history(symbol: str, period: str = "3mo", interval: str = "1d") ->
             "stock": normalized_symbol,
             "company_symbol": display_symbol,
             "company_name": company_name,
+            "instrument_type": instrument_type,
             "generated_at_ist": current_time,
             "points": [],
             "error": str(exc),
@@ -634,6 +927,19 @@ def news(symbol: str = Query(..., description="NSE stock symbol like RELIANCE or
     return get_stock_news(symbol)
 
 
+@app.get("/timing")
+def timing(symbol: str = Query(..., description="Stock, index, or futures alias")):
+    return get_timing_analysis(symbol)
+
+
+@app.get("/options-chain")
+def options_chain(
+    symbol: str = Query(..., description="Stock, index, or futures alias"),
+    expiry: str = Query("", description="Expiry date in YYYY-MM-DD"),
+):
+    return get_options_chain(symbol, expiry=expiry)
+
+
 @app.get("/search-stocks")
 def search_stocks(
     q: str = Query("", description="Stock name or ticker query"),
@@ -671,3 +977,13 @@ def frontend_script():
 @app.get("/style.css")
 def frontend_style():
     return FileResponse(os.path.join(BASE_DIR, "style.css"))
+
+
+@app.get("/options")
+def options_page():
+    return FileResponse(os.path.join(BASE_DIR, "options.html"))
+
+
+@app.get("/options.js")
+def options_script():
+    return FileResponse(os.path.join(BASE_DIR, "options.js"))

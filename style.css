@@ -35,6 +35,28 @@ body {
   padding: 32px 0 56px;
 }
 
+.top-links {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.top-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-radius: 999px;
+  text-decoration: none;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.active-link {
+  background: rgba(31, 191, 117, 0.16);
+  border-color: rgba(31, 191, 117, 0.3);
+}
+
 .hero {
   display: grid;
   grid-template-columns: 1.5fr 1fr;
@@ -461,6 +483,30 @@ button:hover {
   margin-top: 18px;
 }
 
+.timing-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.timing-card .summary {
+  font-size: 0.92rem;
+  margin: 10px 0;
+}
+
+.bullish-text {
+  color: #93f0c3;
+}
+
+.bearish-text {
+  color: #ff9d9d;
+}
+
+.neutral-text {
+  color: #ffd88d;
+}
+
 .news-panel {
   grid-column: 1 / -1;
 }
@@ -526,6 +572,36 @@ button:hover {
   text-decoration: underline;
 }
 
+.table-wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px 10px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.data-table th {
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.data-table td {
+  font-size: 0.94rem;
+}
+
 .watch-card {
   padding: 18px;
   cursor: pointer;
@@ -589,6 +665,7 @@ button:hover {
 
   .metrics-grid,
   .levels-grid,
+  .timing-grid,
   .news-list {
     grid-template-columns: 1fr;
   }
