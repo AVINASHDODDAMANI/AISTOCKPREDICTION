@@ -100,6 +100,7 @@ const stockList = [
 
 const watchlistData = stockList.slice(0, 4);
 const signalData = stockList.filter((item) => item.signal !== "BUY");
+const ALL_COMPANIES = STOCK_CATALOG.map((stock) => ({ ...stock }));
 
 function App() {
   const [activeTab, setActiveTab] = useState("explore");
@@ -117,7 +118,7 @@ function App() {
   const normalizedQuery = searchQuery.trim().toLowerCase();
 
   const searchResults = normalizedQuery
-    ? stockList.filter((stock) =>
+    ? ALL_COMPANIES.filter((stock) =>
         stock.name.toLowerCase().includes(normalizedQuery) ||
         stock.symbol.toLowerCase().startsWith(normalizedQuery)
       )
@@ -254,33 +255,35 @@ function App() {
             <div className="modal-grid">
               <div className="modal-card-item">
                 <span>Current Price</span>
-                <strong>{selectedStock.price}</strong>
+                <strong>{selectedStock.price || "--"}</strong>
               </div>
               <div className="modal-card-item">
                 <span>Change</span>
-                <strong className={selectedStock.change.startsWith("+") ? "gain" : "loss"}>{selectedStock.change}</strong>
+                <strong className={selectedStock.change && selectedStock.change.startsWith("+") ? "gain" : "loss"}>
+                  {selectedStock.change || "--"}
+                </strong>
               </div>
               <div className="modal-card-item">
                 <span>Confidence</span>
-                <strong>{selectedStock.confidence}%</strong>
+                <strong>{selectedStock.confidence != null ? `${selectedStock.confidence}%` : "--"}</strong>
               </div>
               <div className="modal-card-item">
                 <span>Entry</span>
-                <strong>{selectedStock.entry}</strong>
+                <strong>{selectedStock.entry || "--"}</strong>
               </div>
               <div className="modal-card-item">
                 <span>Target</span>
-                <strong>{selectedStock.target}</strong>
+                <strong>{selectedStock.target || "--"}</strong>
               </div>
               <div className="modal-card-item">
                 <span>Stop Loss</span>
-                <strong>{selectedStock.stopLoss}</strong>
+                <strong>{selectedStock.stopLoss || "--"}</strong>
               </div>
             </div>
             <div className="modal-explanation">
               <h4>AI Prediction Details</h4>
               <ul>
-                {selectedStock.aiBullets.map((item) => (
+                {(selectedStock.aiBullets || ["AI details unavailable for this company yet."]).map((item) => (
                   <li key={item}>{item}</li>
                 ))}
               </ul>
