@@ -86,6 +86,35 @@ button {
   align-items: center;
 }
 
+.search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.search-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(96, 184, 255, 0.18);
+  border-radius: 14px;
+  color: var(--text);
+  padding: 10px 16px;
+  font-size: 14px;
+  width: 200px;
+  transition: all 180ms ease;
+  outline: none;
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+.search-input:focus {
+  border-color: var(--accent);
+  background: rgba(96, 184, 255, 0.08);
+  box-shadow: 0 0 0 2px rgba(96, 184, 255, 0.12);
+}
+
 .icon-btn,
 .user-badge,
 .action-pill {
@@ -346,5 +375,9 @@ button {
   .stock-meta {
     justify-content: space-between;
     width: 100%;
+  }
+
+  .search-input {
+    width: 150px;
   }
 }

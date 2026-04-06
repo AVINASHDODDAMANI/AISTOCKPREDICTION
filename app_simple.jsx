@@ -19,6 +19,8 @@ const signalData = stockList.filter((item) => item.signal !== "BUY");
 
 function App() {
   const [activeTab, setActiveTab] = useState("explore");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   const tabContent = {
     explore: stockList,
@@ -27,6 +29,12 @@ function App() {
   };
 
   const currentItems = tabContent[activeTab] || [];
+
+  // Filter items based on search query
+  const filteredItems = currentItems.filter((stock) =>
+    stock.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    stock.symbol.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <div className="simple-shell">
@@ -39,9 +47,30 @@ function App() {
           </div>
         </div>
         <div className="top-actions">
-          <button className="icon-btn" aria-label="Search">
-            <i className="fas fa-search" />
-          </button>
+          <div className="search-container">
+            {isSearchOpen && (
+              <input
+                type="text"
+                className="search-input"
+                placeholder="Search companies..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                autoFocus
+              />
+            )}
+            <button
+              className="icon-btn"
+              aria-label="Search"
+              onClick={() => {
+                setIsSearchOpen(!isSearchOpen);
+                if (isSearchOpen) {
+                  setSearchQuery("");
+                }
+              }}
+            >
+              <i className={isSearchOpen ? "fas fa-times" : "fas fa-search"} />
+            </button>
+          </div>
           <button className="user-badge">A</button>
         </div>
       </header>
@@ -82,7 +111,7 @@ function App() {
         </div>
 
         <div className="stock-list">
-          {currentItems.map((stock) => (
+          {filteredItems.map((stock) => (
             <article key={stock.symbol} className="stock-row">
               <div className="stock-main">
                 <div className="stock-chip">{stock.symbol}</div>
