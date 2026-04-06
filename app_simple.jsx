@@ -1,123 +1,110 @@
-const { useEffect, useMemo, useRef, useState } = React;
+const { useState } = React;
 
-const API = {
-  meta: "/api/meta",
-  search: "/api/search",
-  resolve: (query) => `/api/resolve?q=${encodeURIComponent(query)}`,
-  dashboard: (symbol, timeframe) => `/api/dashboard/${encodeURIComponent(symbol)}?timeframe=${encodeURIComponent(timeframe)}`,
-};
-
-const TIMEFRAME_OPTIONS = [
-  { value: "5m", label: "5m" },
-  { value: "15m", label: "15m" },
-  { value: "1h", label: "1h" },
-  { value: "1d", label: "1D" },
+const marketData = [
+  { ticker: "NIFTY 50", price: "22,713.10", change: "+0.50%", trend: "up" },
+  { ticker: "SENSEX", price: "73,319.55", change: "+0.25%", trend: "up" },
 ];
 
-function formatCurrency(value) {
-  if (value === null || value === undefined) return "--";
-  return `Rs ${Number(value).toFixed(2)}`;
-}
+const stockList = [
+  { symbol: "RELIANCE", name: "Reliance Industries", price: "2,450.70", change: "+1.27%", signal: "BUY", confidence: 78 },
+  { symbol: "TCS", name: "Tata Consultancy", price: "3,951.20", change: "+1.08%", signal: "BUY", confidence: 83 },
+  { symbol: "INFY", name: "Infosys", price: "1,623.45", change: "+0.95%", signal: "BUY", confidence: 80 },
+  { symbol: "HDFCBANK", name: "HDFC Bank", price: "1,409.50", change: "+0.92%", signal: "BUY", confidence: 75 },
+  { symbol: "ADANIENT", name: "Adani Enterprises", price: "3,986.00", change: "-0.88%", signal: "SELL", confidence: 69 },
+  { symbol: "SBIN", name: "State Bank of India", price: "779.80", change: "-1.42%", signal: "SELL", confidence: 65 },
+];
 
-function signalTone(signal) {
-  const clean = String(signal || "").toUpperCase();
-  if (clean.includes("BUY") || clean.includes("BULLISH")) return "bull";
-  if (clean.includes("SELL") || clean.includes("BEARISH")) return "bear";
-  return "neutral";
-}
+const watchlistData = stockList.slice(0, 4);
+const signalData = stockList.filter((item) => item.signal !== "BUY");
 
-async function fetchJson(url, options) {
-  const response = await fetch(url, options);
-  if (!response.ok) {
-    let detail = `Request failed with ${response.status}`;
-    try {
-      const payload = await response.json();
-      if (payload.detail) detail = payload.detail;
-    } catch (_) {}
-    throw new Error(detail);
-  }
-  return response.json();
-}
+function App() {
+  const [activeTab, setActiveTab] = useState("explore");
 
-function CandlestickChart({ chart }) {
-  const hostRef = useRef(null);
+  const tabContent = {
+    explore: stockList,
+    watchlist: watchlistData,
+    signals: signalData,
+  };
 
-  useEffect(() => {
-    if (!hostRef.current || !chart || !chart.candles || !chart.candles.length) return;
+  const currentItems = tabContent[activeTab] || [];
 
-    if (!window.LightweightCharts || !window.LightweightCharts.createChart) {
-      hostRef.current.innerHTML = '<div class="chart-placeholder">Chart library failed to load.</div>';
-      return;
-    }
-
-    let lc = null;
-    let observer = null;
-
-    try {
-      hostRef.current.innerHTML = "";
-      lc = window.LightweightCharts.createChart(hostRef.current, {
-        height: hostRef.current.clientHeight,
-        layout: { backgroundColor: "transparent", textColor: "#c7d6ea" },
-        grid: { vertLines: { color: "rgba(255,255,255,0.06)" }, horzLines: { color: "rgba(255,255,255,0.06)" } },
-        crosshair: { mode: 1 },
-        rightPriceScale: { borderColor: "rgba(255,255,255,0.08)" },
-        timeScale: { borderColor: "rgba(255,255,255,0.08)" },
-      });
-
-      const candleSeries = lc.addCandlestickSeries({
-        upColor: "#21c17a",
-        downColor: "#ff7575",
-        borderVisible: false,
-        wickUpColor: "#21c17a",
-        wickDownColor: "#ff7575",
-      });
-      candleSeries.setData(chart.candles);
-
-      const upper = lc.addLineSeries({ color: "#4da4ff", lineWidth: 2 });
-      const middle = lc.addLineSeries({ color: "#ffd166", lineWidth: 2 });
-      const lower = lc.addLineSeries({ color: "#ff8fab", lineWidth: 2 });
-      upper.setData(chart.indicators.bollingerUpper || []);
-      middle.setData(chart.indicators.bollingerMiddle || []);
-      lower.setData(chart.indicators.bollingerLower || []);
-
-      lc.timeScale().fitContent();
-      observer = new ResizeObserver(() => {
-        if (hostRef.current) {
-          lc.applyOptions({ width: hostRef.current.clientWidth });
-        }
-      });
-      observer.observe(hostRef.current);
-    } catch (error) {
-      console.error("Chart render failed", error);
-      hostRef.current.innerHTML = '<div class="chart-placeholder">Chart could not be rendered for this symbol.</div>';
-    }
-
-    return () => {
-      if (observer) observer.disconnect();
-      if (lc) lc.remove();
-    };
-  }, [chart]);
-
-  return <div className="tv-chart" ref={hostRef} />;
-}
-
-function MetricCard({ label, value, tone }) {
   return (
-    <article className={`metric-card ${tone ? `metric-${tone}` : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
-    </article>
+    <div className="simple-shell">
+      <header className="simple-topbar">
+        <div className="brand">
+          <div className="brand-icon">AI</div>
+          <div>
+            <h1>AI StockPrediction</h1>
+            <p>Neon market signals in one clean view</p>
+          </div>
+        </div>
+        <div className="top-actions">
+          <button className="icon-btn" aria-label="Search">
+            <i className="fas fa-search" />
+          </button>
+          <button className="user-badge">A</button>
+        </div>
+      </header>
+
+      <section className="market-strip">
+        {marketData.map((item) => (
+          <article key={item.ticker} className={`market-card ${item.trend}`}>
+            <span>{item.ticker}</span>
+            <strong>{item.price}</strong>
+            <small>{item.change}</small>
+          </article>
+        ))}
+      </section>
+
+      <nav className="simple-tabs">
+        {[
+          { id: "explore", label: "Explore" },
+          { id: "watchlist", label: "Watchlist" },
+          { id: "signals", label: "Signals" },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            className={activeTab === tab.id ? "tab active" : "tab"}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
+
+      <main className="stock-panel">
+        <div className="panel-header">
+          <div>
+            <h2>{activeTab === "explore" ? "Top Predictions" : activeTab === "watchlist" ? "Watchlist" : "Signals"}</h2>
+            <p>Live model confidence and market direction.</p>
+          </div>
+          <button className="action-pill">Refresh</button>
+        </div>
+
+        <div className="stock-list">
+          {currentItems.map((stock) => (
+            <article key={stock.symbol} className="stock-row">
+              <div className="stock-main">
+                <div className="stock-chip">{stock.symbol}</div>
+                <div>
+                  <h3>{stock.name}</h3>
+                  <p>{stock.price} • <span className={stock.change.startsWith("+") ? "gain" : "loss"}>{stock.change}</span></p>
+                </div>
+              </div>
+              <div className="stock-meta">
+                <span className={`signal-pill ${stock.signal === "BUY" ? "buy" : "sell"}`}>{stock.signal}</span>
+                <span className="confidence">{stock.confidence}%</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </main>
+    </div>
   );
 }
 
-function App() {
-  const [query, setQuery] = useState("RELIANCE");
-  const [selectedTimeframe, setSelectedTimeframe] = useState("1d");
-  const [dashboard, setDashboard] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
 
-  useEffect(() => {
     async function boot() {
       try {
         await loadDashboard(query, selectedTimeframe);
@@ -126,7 +113,6 @@ function App() {
       }
     }
     boot();
-  }, []);
 
   async function loadDashboard(symbol, timeframe) {
     setLoading(true);
@@ -207,6 +193,5 @@ function App() {
       {error && <div className="error-banner">{error}</div>}
     </div>
   );
-}
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
