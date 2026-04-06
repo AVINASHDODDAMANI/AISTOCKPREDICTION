@@ -29,12 +29,17 @@ function App() {
   };
 
   const currentItems = tabContent[activeTab] || [];
+  const normalizedQuery = searchQuery.trim().toLowerCase();
 
-  // Filter items based on search query
-  const filteredItems = currentItems.filter((stock) =>
-    stock.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    stock.symbol.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const searchResults = normalizedQuery
+    ? stockList.filter((stock) =>
+        stock.name.toLowerCase().includes(normalizedQuery) ||
+        stock.symbol.toLowerCase().startsWith(normalizedQuery)
+      )
+    : [];
+
+  const filteredItems = normalizedQuery ? searchResults : currentItems;
+  const suggestions = normalizedQuery ? searchResults.slice(0, 4) : [];
 
   return (
     <div className="simple-shell">
@@ -49,14 +54,31 @@ function App() {
         <div className="top-actions">
           <div className="search-container">
             {isSearchOpen && (
-              <input
-                type="text"
-                className="search-input"
-                placeholder="Search companies..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                autoFocus
-              />
+              <>
+                <input
+                  type="text"
+                  className="search-input"
+                  placeholder="Search companies..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  autoFocus
+                />
+                {suggestions.length > 0 && (
+                  <div className="suggestions-list">
+                    {suggestions.map((stock) => (
+                      <button
+                        key={stock.symbol}
+                        type="button"
+                        className="suggestion-item"
+                        onClick={() => setSearchQuery(stock.name)}
+                      >
+                        <strong>{stock.symbol}</strong>
+                        <span>{stock.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             <button
               className="icon-btn"

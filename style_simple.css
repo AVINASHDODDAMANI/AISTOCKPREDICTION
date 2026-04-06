@@ -115,6 +115,48 @@ button {
   box-shadow: 0 0 0 2px rgba(96, 184, 255, 0.12);
 }
 
+.suggestions-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  width: 100%;
+  background: rgba(8, 12, 24, 0.96);
+  border: 1px solid rgba(96, 184, 255, 0.16);
+  border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(2, 8, 22, 0.35);
+  overflow: hidden;
+  z-index: 5;
+}
+
+.suggestion-item {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 180ms ease;
+}
+
+.suggestion-item:hover {
+  background: rgba(96, 184, 255, 0.08);
+}
+
+.suggestion-item strong {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.suggestion-item span {
+  color: var(--muted);
+}
+
 .icon-btn,
 .user-badge,
 .action-pill {
