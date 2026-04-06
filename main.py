@@ -1001,9 +1001,19 @@ def react_app():
     return FileResponse(os.path.join(BASE_DIR, "app.jsx"), media_type="text/babel")
 
 
+@app.get("/app_simple.jsx")
+def react_app_simple():
+    return FileResponse(os.path.join(BASE_DIR, "app_simple.jsx"), media_type="text/babel")
+
+
 @app.get("/style.css")
 def style():
     return FileResponse(os.path.join(BASE_DIR, "style.css"))
+
+
+@app.get("/style_simple.css")
+def style_simple():
+    return FileResponse(os.path.join(BASE_DIR, "style_simple.css"))
 
 
 @app.get("/api/meta")
